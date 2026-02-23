@@ -40,7 +40,7 @@ function getDayOfYear(date: Date): number {
 
 export function ChallengePage() {
   const basePath = useBasePath();
-  const isMobile = basePath === "/mobile";
+  const isMobile = basePath !== "/web";
 
   const [challenge, setChallenge] = useState<ReadingChallenge | null>(() =>
     loadChallenge()

@@ -285,7 +285,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
       </header>
 
       <div className="profile-hero-actions">
-        <Link to="/mobile/bibliotheek" className="profile-hero-btn profile-hero-btn-primary">
+        <Link to="/bibliotheek" className="profile-hero-btn profile-hero-btn-primary">
           Mijn bibliotheek
         </Link>
         <button
@@ -297,6 +297,18 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
         </button>
         <button type="button" className="profile-hero-btn profile-hero-btn-logout" onClick={onLogout}>
           Uitloggen
+        </button>
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => {
+            const w = window as any;
+            if (typeof w.btEnableZoom === "function") {
+              w.btEnableZoom();
+            }
+          }}
+        >
+          Inzoomen toestaan
         </button>
       </div>
 

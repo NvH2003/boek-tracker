@@ -32,7 +32,7 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
     }
     setCurrentUser(username.trim());
     onLogin?.();
-    const next = basePath === "/mobile" ? "/boeken" : "/dashboard";
+    const next = basePath === "/web" ? "/web/dashboard" : "/boeken";
     navigate(withBase(basePath, next), { replace: true });
   }
 

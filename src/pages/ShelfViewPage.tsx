@@ -191,7 +191,7 @@ export function ShelfViewPage() {
     <div className="page shelf-view-page">
       <header className="shelf-view-header">
         <Link
-          to={basePath === "/mobile" ? "/mobile/profiel" : withBase(basePath, "/planken")}
+          to={withBase(basePath, "/planken")}
           className="shelf-view-back"
         >
           ← Terug

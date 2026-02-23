@@ -95,14 +95,14 @@ export function BuddyReadingListPage() {
     return (
       <div className="page buddy-reading-page">
         <p>Je bent geen Boekbuddies met {username}. Alleen Boekbuddies kunnen elkaars leeslijst bekijken.</p>
-        <Link to={basePath === "/mobile" ? "/mobile/profiel" : withBase(basePath, "/profiel")} className="link-button">
+        <Link to={withBase(basePath, "/profiel")} className="link-button">
           Terug naar profiel
         </Link>
       </div>
     );
   }
 
-  const backUrl = basePath === "/mobile" ? "/mobile/profiel" : withBase(basePath, "/profiel");
+  const backUrl = withBase(basePath, "/profiel");
 
   function toggleBookSelection(book: Book) {
     setSelectedBookIds((prev) => {

@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {
-        name: "Boek Tracker",
-        short_name: "Boek Tracker",
+        name: "BookFlow",
+        short_name: "BookFlow",
         description: "Track je leeslijst, planken en Boekbuddies.",
         theme_color: "#0f172a",
         background_color: "#0f172a",

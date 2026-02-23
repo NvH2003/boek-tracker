@@ -49,7 +49,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     onLogin();
     await syncFromSupabase();
     await pushLocalToSupabase();
-    const next = basePath === "/mobile" ? "/boeken" : "/dashboard";
+    const next = basePath === "/web" ? "/web/dashboard" : "/boeken";
     navigate(withBase(basePath, next), { replace: true });
   }
 

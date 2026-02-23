@@ -14,11 +14,11 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { BuddyReadingListPage } from "./pages/BuddyReadingListPage";
 import { getBasePathFromPathname, withBase } from "./routing";
 
-/** Redirect root-level routes naar mobiele view, zodat de webapp altijd dezelfde UI toont als de app. */
-function RedirectToMobile() {
+/** Oude /mobile/*-URL's doorsturen naar korte paden: /mobile/profiel → /profiel */
+function RedirectMobileToRoot() {
   const location = useLocation();
   const path = location.pathname;
-  const to = path === "/dashboard" || path === "/dashboard/web" ? "/mobile/boeken" : "/mobile" + path;
+  const to = path === "/mobile" || path === "/mobile/" ? "/boeken" : path.replace(/^\/mobile/, "") || "/boeken";
   return <Navigate to={to} replace />;
 }
 
@@ -26,7 +26,7 @@ export function App() {
   const location = useLocation();
   const navigate = useNavigate();
   const basePath = getBasePathFromPathname(location.pathname);
-  const isMobileShell = basePath === "/mobile";
+  const isMobileShell = basePath !== "/web";
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => !!getCurrentUsername());
   const [hasSharedInboxItems, setHasSharedInboxItems] = useState<boolean>(
     () => loadSharedInbox().length > 0
@@ -42,7 +42,7 @@ export function App() {
     })();
   }, []);
 
-  // In de native mobiele app (Capacitor) altijd de mobiele shell gebruiken
+  // In Capacitor: oude /mobile/*-links omzetten naar korte paden
   useEffect(() => {
     const w = window as any;
     const isCapacitor =
@@ -51,8 +51,9 @@ export function App() {
         ? w.Capacitor.isNativePlatform()
         : true);
 
-    if (isCapacitor && !location.pathname.startsWith("/mobile")) {
-      navigate("/mobile", { replace: true });
+    if (isCapacitor && location.pathname.startsWith("/mobile")) {
+      const to = location.pathname.replace(/^\/mobile/, "") || "/boeken";
+      navigate(to, { replace: true });
     }
   }, [location.pathname, navigate]);
 
@@ -101,7 +102,7 @@ export function App() {
       {!isMobileShell && (
         <header className="app-header">
           <div className="app-header-left">
-            <span className="logo">Boek Tracker</span>
+            <span className="logo">BookFlow</span>
             {isLoggedIn && (
               <nav className="nav">
                 <Link to={withBase(basePath, "/dashboard")}>Dashboard</Link>
@@ -126,72 +127,88 @@ export function App() {
       )}
       <main className="app-main">
         <Routes>
-          {/* Web app en mobiele app: standaard dezelfde mobiele UI. Desktop-layout alleen via /web/* */}
+          {/* Korte URL's: /profiel, /boeken, /login, … = mobiele view */}
           <Route
             path="/"
             element={
-              <Navigate
-                to={isLoggedIn ? "/mobile/boeken" : "/mobile/login"}
-                replace
-              />
+              <Navigate to={isLoggedIn ? "/boeken" : "/login"} replace />
             }
           />
-          <Route path="/login" element={<RedirectToMobile />} />
-          <Route path="/register" element={<RedirectToMobile />} />
+          <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
+          <Route path="/register" element={<RegisterPage onLogin={handleLogin} />} />
           <Route
             path="/dashboard"
             element={
-              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
+              isLoggedIn ? <Navigate to="/boeken" replace /> : <Navigate to="/login" replace />
             }
           />
           <Route
             path="/dashboard/web"
             element={
-              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
+              isLoggedIn ? <Navigate to="/boeken" replace /> : <Navigate to="/login" replace />
             }
           />
           <Route
             path="/boeken"
             element={
-              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
+              isLoggedIn ? <DashboardPage mode="mobile" /> : <Navigate to="/login" replace />
+            }
+          />
+          <Route
+            path="/zoeken"
+            element={
+              isLoggedIn ? <BooksPage mode="search" /> : <Navigate to="/login" replace />
+            }
+          />
+          <Route
+            path="/bibliotheek"
+            element={
+              isLoggedIn ? <BooksPage mode="library" /> : <Navigate to="/login" replace />
             }
           />
           <Route
             path="/boek/:id"
             element={
-              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
+              isLoggedIn ? <BookDetailPage /> : <Navigate to="/login" replace />
             }
           />
           <Route
             path="/planken"
             element={
-              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
+              isLoggedIn ? <ShelvesPage /> : <Navigate to="/login" replace />
             }
           />
           <Route
             path="/plank/:shelfId"
             element={
-              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
+              isLoggedIn ? <ShelfViewPage /> : <Navigate to="/login" replace />
             }
           />
           <Route
             path="/boekbuddy/:username"
             element={
-              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
+              isLoggedIn ? <BuddyReadingListPage /> : <Navigate to="/login" replace />
             }
           />
           <Route
             path="/challenge"
             element={
-              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
+              isLoggedIn ? <ChallengePage /> : <Navigate to="/login" replace />
             }
           />
           <Route
             path="/profiel"
             element={
-              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
+              isLoggedIn ? (
+                <ProfilePage onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
             }
           />
+
+          {/* Oude /mobile/*-links → doorsturen naar korte paden */}
+          <Route path="/mobile/*" element={<RedirectMobileToRoot />} />
 
           {/* Web app shell (expliciet pad) */}
           <Route
@@ -251,108 +268,35 @@ export function App() {
             }
           />
 
-          {/* Mobile app shell (zelfde content/data, andere UI) */}
-          <Route
-            path="/mobile"
-            element={
-              <Navigate to={isLoggedIn ? "/mobile/boeken" : "/mobile/login"} replace />
-            }
-          />
-          <Route path="/mobile/login" element={<LoginPage onLogin={handleLogin} />} />
-          <Route path="/mobile/register" element={<RegisterPage onLogin={handleLogin} />} />
-          <Route
-            path="/mobile/dashboard"
-            element={
-              <Navigate to={isLoggedIn ? "/mobile/boeken" : "/mobile/login"} replace />
-            }
-          />
-          <Route
-            path="/mobile/boeken"
-            element={
-              isLoggedIn ? <DashboardPage mode="mobile" /> : <Navigate to="/mobile/login" replace />
-            }
-          />
-          <Route
-            path="/mobile/zoeken"
-            element={
-              isLoggedIn ? <BooksPage mode="search" /> : <Navigate to="/mobile/login" replace />
-            }
-          />
-          <Route
-            path="/mobile/bibliotheek"
-            element={
-              isLoggedIn ? <BooksPage mode="library" /> : <Navigate to="/mobile/login" replace />
-            }
-          />
-          <Route
-            path="/mobile/plank/:shelfId"
-            element={
-              isLoggedIn ? <ShelfViewPage /> : <Navigate to="/mobile/login" replace />
-            }
-          />
-          <Route
-            path="/mobile/boekbuddy/:username"
-            element={
-              isLoggedIn ? <BuddyReadingListPage /> : <Navigate to="/mobile/login" replace />
-            }
-          />
-          <Route
-            path="/mobile/boek/:id"
-            element={
-              isLoggedIn ? <BookDetailPage /> : <Navigate to="/mobile/login" replace />
-            }
-          />
-          <Route
-            path="/mobile/planken"
-            element={
-              isLoggedIn ? <ShelvesPage /> : <Navigate to="/mobile/login" replace />
-            }
-          />
-          <Route
-            path="/mobile/challenge"
-            element={
-              isLoggedIn ? <ChallengePage /> : <Navigate to="/mobile/login" replace />
-            }
-          />
-          <Route
-            path="/mobile/profiel"
-            element={
-              isLoggedIn ? (
-                <ProfilePage onLogout={handleLogout} />
-              ) : (
-                <Navigate to="/mobile/login" replace />
-              )
-            }
-          />
         </Routes>
       </main>
 
       {isMobileShell && isLoggedIn && (
         <nav className="mobile-tabbar" aria-label="Mobiele navigatie">
           <Link
-            to="/mobile/boeken"
-            className={`mobile-tab ${(location.pathname.startsWith("/mobile/boeken") || location.pathname.startsWith("/mobile/boek/")) ? "active" : ""}`}
+            to="/boeken"
+            className={`mobile-tab ${(location.pathname.startsWith("/boeken") || location.pathname.startsWith("/boek/")) ? "active" : ""}`}
           >
             <span className="mobile-tab-icon" aria-hidden="true">📚</span>
             <span className="mobile-tab-label">Boeken</span>
           </Link>
           <Link
-            to="/mobile/zoeken"
-            className={`mobile-tab ${location.pathname.startsWith("/mobile/zoeken") ? "active" : ""}`}
+            to="/zoeken"
+            className={`mobile-tab ${location.pathname.startsWith("/zoeken") ? "active" : ""}`}
           >
             <span className="mobile-tab-icon" aria-hidden="true">🔍</span>
             <span className="mobile-tab-label">Zoeken</span>
           </Link>
           <Link
-            to="/mobile/challenge"
-            className={`mobile-tab ${location.pathname.startsWith("/mobile/challenge") ? "active" : ""}`}
+            to="/challenge"
+            className={`mobile-tab ${location.pathname.startsWith("/challenge") ? "active" : ""}`}
           >
             <span className="mobile-tab-icon" aria-hidden="true">🔥</span>
             <span className="mobile-tab-label">Lees-challenge</span>
           </Link>
           <Link
-            to="/mobile/profiel"
-            className={`mobile-tab ${location.pathname.startsWith("/mobile/profiel") ? "active" : ""}`}
+            to="/profiel"
+            className={`mobile-tab ${location.pathname.startsWith("/profiel") ? "active" : ""}`}
           >
             <span className="mobile-tab-icon" aria-hidden="true">
               👤
