@@ -2,7 +2,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { Book, ReadStatus, Shelf } from "../types";
 import { loadBooks, loadShelves, saveShelves, saveBooks, subscribeBooks, loadFriends, shareWithFriend } from "../storage";
 import { useBasePath, withBase } from "../routing";
-import { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 
 const STATUS_MAP: Record<string, ReadStatus> = {
   "wil-ik-lezen": "wil-ik-lezen",
@@ -39,6 +39,7 @@ export function ShelfViewPage() {
     () => shelves.find((s) => s.id === shelfId) ?? null,
     [shelves, shelfId]
   );
+  const isCustomShelf = shelf && !STATUS_MAP[shelf.id];
   const shelfBooks = useMemo(
     () => getBooksForShelf(shelf, books),
     [shelf, books]
@@ -49,13 +50,42 @@ export function ShelfViewPage() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [showAddToShelfModal, setShowAddToShelfModal] = useState(false);
   const [newShelfName, setNewShelfName] = useState("");
-  const [pendingCustomShelfId, setPendingCustomShelfId] = useState<string | null>(null);
   const [showDeleteSelectedModal, setShowDeleteSelectedModal] = useState(false);
   const [showShareSelectedModal, setShowShareSelectedModal] = useState(false);
   const [shareSelectedError, setShareSelectedError] = useState("");
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressNextClickRef = useRef(false);
   const longPressBookIdRef = useRef<string | null>(null);
+  const [selectionBarPosition, setSelectionBarPosition] = useState({ bottom: 96, leftPercent: 50 });
+  const selectionBarDragRef = useRef<{ startY: number; startBottom: number; startX: number; startLeft: number } | null>(null);
+
+  function handleSelectionBarPointerDown(e: React.PointerEvent) {
+    e.preventDefault();
+    selectionBarDragRef.current = {
+      startY: e.clientY,
+      startBottom: selectionBarPosition.bottom,
+      startX: e.clientX,
+      startLeft: selectionBarPosition.leftPercent
+    };
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  }
+  function handleSelectionBarPointerMove(e: React.PointerEvent) {
+    if (selectionBarDragRef.current == null) return;
+    const { startY, startBottom, startX, startLeft } = selectionBarDragRef.current;
+    const deltaY = startY - e.clientY;
+    const deltaXPercent = ((e.clientX - startX) / window.innerWidth) * 100;
+    let newBottom = Math.round(startBottom + deltaY);
+    let newLeft = startLeft + deltaXPercent;
+    newBottom = Math.max(60, Math.min(500, newBottom));
+    newLeft = Math.max(5, Math.min(95, newLeft));
+    setSelectionBarPosition({ bottom: newBottom, leftPercent: newLeft });
+  }
+  function handleSelectionBarPointerUp(e: React.PointerEvent) {
+    if (selectionBarDragRef.current != null) {
+      selectionBarDragRef.current = null;
+      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    }
+  }
 
   function toggleBookSelected(id: string) {
     setSelectedBookIds((prev) => {
@@ -96,27 +126,30 @@ export function ShelfViewPage() {
   const STATUS_LABELS: Record<ReadStatus, string> = {
     "wil-ik-lezen": "Wil ik lezen",
     "aan-het-lezen": "Aan het lezen",
-    gelezen: "Gelezen"
+    gelezen: "Gelezen",
+    "geen-status": "Geen status"
+  };
+  /** Korte labels voor status-pill op eigen planken */
+  const STATUS_PILL_LABELS: Record<ReadStatus, string> = {
+    "wil-ik-lezen": "TBR",
+    "aan-het-lezen": "Aan het lezen",
+    gelezen: "Gelezen",
+    "geen-status": "Geen status"
   };
 
-  function addSelectedBooksToShelf(targetShelfId: string, explicitStatus?: ReadStatus) {
+  function addSelectedBooksToShelf(targetShelfId: string) {
     if (selectedBookIds.size === 0) return;
-    const status = explicitStatus ?? STATUS_MAP[targetShelfId];
+    const status = STATUS_MAP[targetShelfId];
     const isCustomShelf = !STATUS_MAP[targetShelfId];
     const ids = Array.from(selectedBookIds);
     const next = books.map((b) => {
       if (!ids.includes(b.id)) return b;
       const shelfIds = b.shelfIds ?? [];
-      if (status) {
-        const addToShelfIds = isCustomShelf && !shelfIds.includes(targetShelfId);
-        return {
-          ...b,
-          status,
-          ...(addToShelfIds ? { shelfIds: [...shelfIds, targetShelfId] } : {})
-        };
+      if (isCustomShelf) {
+        if (shelfIds.includes(targetShelfId)) return b;
+        return { ...b, shelfIds: [...shelfIds, targetShelfId] };
       }
-      if (shelfIds.includes(targetShelfId)) return b;
-      return { ...b, shelfIds: [...shelfIds, targetShelfId] };
+      return { ...b, status: status! };
     });
     persist(next);
     const shelfName = shelves.find((s) => s.id === targetShelfId)?.name ?? "plank";
@@ -128,7 +161,6 @@ export function ShelfViewPage() {
     setSelectedBookIds(new Set());
     window.setTimeout(() => setToast(""), 2500);
     setShowAddToShelfModal(false);
-    setPendingCustomShelfId(null);
   }
 
   function deleteSelectedBooks() {
@@ -188,7 +220,7 @@ export function ShelfViewPage() {
   }
 
   return (
-    <div className="page shelf-view-page">
+    <div className={`page shelf-view-page ${selectionMode ? "selection-mode-active" : ""}`}>
       <header className="shelf-view-header">
         <Link
           to={withBase(basePath, "/planken")}
@@ -275,6 +307,16 @@ export function ShelfViewPage() {
                   key={book.id}
                   className={`bookcase-book ${isSelected ? "bookcase-book-selected" : ""}`}
                 >
+                  {selectionMode && (
+                    <button
+                      type="button"
+                      className={`mobile-reading-checkbox ${isSelected ? "checked" : ""}`}
+                      onClick={() => toggleBookSelected(book.id)}
+                      aria-pressed={isSelected}
+                    >
+                      <span className="mobile-reading-checkbox-icon">{isSelected ? "✓" : ""}</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="bookcase-book-main"
@@ -373,6 +415,11 @@ export function ShelfViewPage() {
                     {book.authors && (
                       <span className="bookcase-book-author">{book.authors}</span>
                     )}
+                    {isCustomShelf && (
+                      <span className={`bookcase-book-status bookcase-book-status-${book.status}`} aria-label={`Status: ${STATUS_LABELS[book.status]}`}>
+                        {STATUS_PILL_LABELS[book.status]}
+                      </span>
+                    )}
                   </button>
                 </div>
               );
@@ -383,14 +430,34 @@ export function ShelfViewPage() {
         )}
       </div>
 
-      {selectionMode && selectedBookIds.size > 0 && (
-        <div className="mobile-selection-bar">
+      {selectionMode && (
+        <div
+          className="mobile-selection-bar"
+          style={{
+            bottom: `${selectionBarPosition.bottom}px`,
+            left: `${selectionBarPosition.leftPercent}%`,
+            transform: "translateX(-50%)"
+          }}
+        >
+          <div
+            className="mobile-selection-bar-drag-handle"
+            onPointerDown={handleSelectionBarPointerDown}
+            onPointerMove={handleSelectionBarPointerMove}
+            onPointerUp={handleSelectionBarPointerUp}
+            onPointerLeave={handleSelectionBarPointerUp}
+            role="button"
+            tabIndex={0}
+            aria-label="Versleep om het menu te verplaatsen"
+          >
+            ⋮⋮
+          </div>
           <span className="mobile-selection-count">
             {selectedBookIds.size} geselecteerd
           </span>
           <button
             type="button"
             className="primary-button mobile-selection-add"
+            disabled={selectedBookIds.size === 0}
             onClick={() => setShowAddToShelfModal(true)}
           >
             Toevoegen aan plank
@@ -398,6 +465,7 @@ export function ShelfViewPage() {
           <button
             type="button"
             className="primary-button"
+            disabled={selectedBookIds.size === 0}
             onClick={() => { setShareSelectedError(""); setShowShareSelectedModal(true); }}
           >
             Delen met Boekbuddy
@@ -405,6 +473,7 @@ export function ShelfViewPage() {
           <button
             type="button"
             className="secondary-button destructive"
+            disabled={selectedBookIds.size === 0}
             onClick={() => setShowDeleteSelectedModal(true)}
           >
             Verwijderen
@@ -438,74 +507,48 @@ export function ShelfViewPage() {
           >
             <h3>Kies plank</h3>
             <p className="modal-intro">
-              {pendingCustomShelfId
-                ? "Kies status voor deze plank"
-                : `Kies een plank voor ${selectedBookIds.size} boek${selectedBookIds.size === 1 ? "" : "en"}.`}
+              Kies een plank voor {selectedBookIds.size} boek{selectedBookIds.size === 1 ? "" : "en"}. De huidige status van elk boek blijft behouden.
             </p>
-            {pendingCustomShelfId ? (
-              <ul className="add-to-shelf-list">
-                {(["wil-ik-lezen", "aan-het-lezen", "gelezen"] as const).map((status) => (
-                  <li key={status}>
-                    <button
-                      type="button"
-                      className="add-to-shelf-item"
-                      onClick={() => addSelectedBooksToShelf(pendingCustomShelfId, status)}
-                    >
-                      {STATUS_LABELS[status]}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <>
-                <ul className="add-to-shelf-list">
-                  {shelves.map((s) => (
-                    <li key={s.id}>
-                      <button
-                        type="button"
-                        className="add-to-shelf-item"
-                        onClick={() => {
-                          if (s.system) {
-                            addSelectedBooksToShelf(s.id);
-                          } else {
-                            setPendingCustomShelfId(s.id);
-                          }
-                        }}
-                      >
-                        {s.name}
-                        {s.system && <span className="tag" style={{ marginLeft: 8 }}>Standaard</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <div className="add-to-shelf-new">
-                  <input
-                    type="text"
-                    value={newShelfName}
-                    onChange={(e) => setNewShelfName(e.target.value)}
-                    placeholder="Nieuwe plank naam…"
-                    className="add-to-shelf-new-input"
-                  />
+            <ul className="add-to-shelf-list">
+              {shelves.map((s) => (
+                <li key={s.id}>
                   <button
                     type="button"
-                    className="add-to-shelf-item add-to-shelf-new-btn"
-                    disabled={!newShelfName.trim()}
-                    onClick={() => {
-                      const name = newShelfName.trim();
-                      if (!name) return;
-                      const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
-                      const next = [...shelves, newShelf];
-                      saveShelves(next);
-                      setShelves(next);
-                      setPendingCustomShelfId(newShelf.id);
-                      setNewShelfName("");
-                    }}
+                    className="add-to-shelf-item"
+                    onClick={() => addSelectedBooksToShelf(s.id)}
                   >
-                    Nieuwe plank aanmaken
+                    {s.name}
+                    {s.system && <span className="tag" style={{ marginLeft: 8 }}>Standaard</span>}
                   </button>
-                </div>
-              </>
-            )}
+                </li>
+              ))}
+            </ul>
+            <div className="add-to-shelf-new">
+              <input
+                type="text"
+                value={newShelfName}
+                onChange={(e) => setNewShelfName(e.target.value)}
+                placeholder="Nieuwe plank naam…"
+                className="add-to-shelf-new-input"
+              />
+              <button
+                type="button"
+                className="add-to-shelf-item add-to-shelf-new-btn"
+                disabled={!newShelfName.trim()}
+                onClick={() => {
+                  const name = newShelfName.trim();
+                  if (!name) return;
+                  const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
+                  const next = [...shelves, newShelf];
+                  saveShelves(next);
+                  setShelves(next);
+                  addSelectedBooksToShelf(newShelf.id);
+                  setNewShelfName("");
+                }}
+              >
+                Nieuwe plank aanmaken
+              </button>
+            </div>
             <div className="modal-actions">
               <button
                 type="button"
@@ -514,10 +557,9 @@ export function ShelfViewPage() {
                   setShowAddToShelfModal(false);
                   setSelectedBookIds(new Set());
                   setNewShelfName("");
-                  setPendingCustomShelfId(null);
                 }}
               >
-                {pendingCustomShelfId ? "Terug" : "Annuleren"}
+                Annuleren
               </button>
             </div>
           </div>

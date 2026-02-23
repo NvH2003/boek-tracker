@@ -240,6 +240,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.25rem;
+  transition: transform 0.1s ease, opacity 0.1s ease;
 }
 
 .primary-button {
@@ -252,6 +253,11 @@ body {
   background: linear-gradient(to right, #4f46e5, #7c3aed);
 }
 
+.primary-button:active {
+  transform: scale(0.98);
+  opacity: 0.95;
+}
+
 .secondary-button {
   background: transparent;
   color: #e5e7eb;
@@ -260,6 +266,11 @@ body {
 
 .secondary-button:hover {
   background: rgba(148, 163, 184, 0.12);
+}
+
+.secondary-button:active {
+  transform: scale(0.98);
+  opacity: 0.9;
 }
 
 .link-button {
@@ -592,7 +603,20 @@ select {
   color: #9ca3af;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.book-planks {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+.book-planks-label {
+  font-size: 0.78rem;
+  color: #9ca3af;
+  margin-right: 0.3rem;
 }
 
 .book-card-challenge-progress {
@@ -1053,8 +1077,26 @@ select {
   max-width: 20rem;
 }
 
+.profile-search-hint {
+  font-size: 0.85rem;
+  color: rgba(148, 163, 184, 0.95);
+  margin: -0.25rem 0 0.5rem;
+}
+
 .profile-search-wrap {
   margin-bottom: 0.5rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.profile-search-wrap .profile-search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-refresh-btn {
+  flex-shrink: 0;
 }
 
 .profile-search-input {
@@ -2885,6 +2927,7 @@ select {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  padding-bottom: 7rem;
 }
 
 .mobile-books-subtabs {
@@ -3018,6 +3061,27 @@ select {
   -ms-user-select: none;
 }
 
+.mobile-reading-checkbox {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid rgba(148, 163, 184, 0.8);
+  background: rgba(15, 23, 42, 0.9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+.mobile-reading-checkbox.checked {
+  border-color: #60a5fa;
+  background: rgba(59, 130, 246, 0.9);
+}
+.mobile-reading-checkbox-icon {
+  font-size: 0.9rem;
+  color: #e5e7eb;
+}
+
 .mobile-reading-cover img,
 .mobile-reading-placeholder {
   width: 60px;
@@ -3057,6 +3121,15 @@ select {
 .mobile-reading-author {
   font-size: 0.8rem;
   color: #9ca3af;
+}
+
+.mobile-reading-planks {
+  margin-top: 0.2rem;
+}
+.mobile-reading-planks-label {
+  font-size: 0.78rem;
+  color: #9ca3af;
+  margin-right: 0.25rem;
 }
 
 .mobile-reading-pages {
@@ -3216,6 +3289,75 @@ select {
 
 .modal-book-info {
   max-width: 420px;
+}
+
+.modal-book-status-row,
+.modal-book-planks-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.modal-book-status-label {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+.status-select {
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.45rem;
+  font-size: 0.85rem;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  color: #e5e7eb;
+}
+
+.status-select-wil-ik-lezen {
+  background: #facc15;
+  color: #000;
+}
+.status-select-aan-het-lezen {
+  background: #93c5fd;
+  color: #000;
+}
+.status-select-gelezen {
+  background: #86efac;
+  color: #000;
+}
+.status-select-geen-status {
+  background: #94a3b8;
+  color: #000;
+}
+
+.status-dropdown {
+  position: relative;
+  display: inline-block;
+}
+.status-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.status-dropdown-caret {
+  font-size: 0.7rem;
+}
+.status-dropdown-menu {
+  position: absolute;
+  z-index: 60;
+  margin-top: 0.3rem;
+  padding: 0.35rem;
+  border-radius: 0.7rem;
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 180px;
+}
+.modal-book-plank-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
 }
 
 .modal-series-edit {
@@ -3591,6 +3733,95 @@ select {
   gap: 0.7rem;
 }
 
+/* Status pills op boekdetailpagina */
+.book-detail-status-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.book-detail-status-pill {
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 2px solid transparent;
+  cursor: pointer;
+  background: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+}
+.book-detail-status-pill:hover {
+  background: rgba(148, 163, 184, 0.35);
+  color: #e2e8f0;
+}
+.book-detail-status-pill.selected {
+  color: #000;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+.book-detail-status-pill-wil-ik-lezen.selected { background: #facc15; }
+.book-detail-status-pill-aan-het-lezen.selected { background: #93c5fd; }
+.book-detail-status-pill-gelezen.selected { background: #86efac; }
+.book-detail-status-pill-geen-status.selected { background: #94a3b8; }
+
+/* Plank pills (overal) */
+.book-detail-plank-pills,
+.book-planks,
+.mobile-reading-planks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+.plank-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(59, 130, 246, 0.6);
+  color: #e0f2fe;
+}
+.plank-pill-inline {
+  padding: 0.18rem 0.4rem;
+  font-size: 0.75rem;
+}
+.plank-pill-link {
+  color: inherit;
+  text-decoration: none;
+}
+.plank-pill-link:hover {
+  text-decoration: underline;
+}
+.plank-pill-remove {
+  margin-left: 0.25rem;
+  padding: 0 0.2rem;
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.plank-pill-remove:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.15);
+}
+.book-detail-add-plank-select {
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.35rem;
+  font-size: 0.85rem;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  color: #e2e8f0;
+}
+.book-detail-planks-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
 .notes-textarea {
   padding: 0.45rem 0.6rem;
   border-radius: 0.65rem;
@@ -3708,6 +3939,10 @@ select {
   margin-top: 1rem;
 }
 
+.shelf-view-page.selection-mode-active .bookcase {
+  padding-bottom: 7rem;
+}
+
 .bookcase-empty {
   text-align: center;
   padding: 2rem;
@@ -3821,6 +4056,33 @@ select {
   overflow: hidden;
 }
 
+.bookcase-book-status {
+  display: inline-block;
+  margin-top: 0.4rem;
+  padding: 0.28rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+}
+.bookcase-book-status-wil-ik-lezen {
+  background: #facc15;
+  color: #000;
+}
+.bookcase-book-status-aan-het-lezen {
+  background: #93c5fd;
+  color: #000;
+}
+.bookcase-book-status-gelezen {
+  background: #86efac;
+  color: #000;
+}
+.bookcase-book-status-geen-status {
+  background: #94a3b8;
+  color: #000;
+}
+
 .bookcase-plank {
   height: 12px;
   background: linear-gradient(180deg, #57534e 0%, #44403c 50%, #292524 100%);
@@ -3828,23 +4090,37 @@ select {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-/* Mobiele selectiebalk: toevoegen aan plank */
+/* Mobiele selectiebalk: toevoegen aan plank (positie via inline style / sleep) */
 .mobile-selection-bar {
   position: fixed;
-  bottom: calc(env(safe-area-inset-bottom, 0) + 80px);
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0.45rem;
   padding: 0.8rem 0.9rem;
+  padding-top: 0.5rem;
   background: radial-gradient(circle at top, #111827, #020617);
   border: 1px solid rgba(96, 165, 250, 0.5);
   border-radius: 1.1rem;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
   z-index: 60;
   max-width: calc(100vw - 2rem);
+}
+
+.mobile-selection-bar-drag-handle {
+  cursor: grab;
+  padding: 0.35rem;
+  margin: -0.25rem -0.25rem 0.2rem;
+  border-radius: 0.5rem;
+  color: #94a3b8;
+  font-size: 1rem;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.mobile-selection-bar-drag-handle:active {
+  cursor: grabbing;
+  background: rgba(148, 163, 184, 0.15);
 }
 
 .mobile-selection-count {
@@ -3902,6 +4178,12 @@ select {
 
 .add-to-shelf-item:hover {
   background: rgba(51, 65, 85, 0.9);
+  border-color: #60a5fa;
+}
+
+.add-to-shelf-item:active:not(.add-to-shelf-item-disabled) {
+  transform: scale(0.98);
+  background: rgba(59, 130, 246, 0.25);
   border-color: #60a5fa;
 }
 

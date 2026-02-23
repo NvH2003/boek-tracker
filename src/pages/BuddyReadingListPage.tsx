@@ -1,5 +1,6 @@
+import React from "react";
 import { useParams, Link } from "react-router-dom";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { loadBooksForUserAsync, loadFriends, loadShelves, saveShelves, addBookSnapshotsToMyLibrary } from "../storage";
 import { useBasePath, withBase } from "../routing";
 import type { Book, ReadStatus } from "../types";
@@ -7,7 +8,8 @@ import type { Book, ReadStatus } from "../types";
 const STATUS_LABELS: Record<ReadStatus, string> = {
   "wil-ik-lezen": "Wil ik lezen",
   "aan-het-lezen": "Aan het lezen",
-  gelezen: "Gelezen"
+  gelezen: "Gelezen",
+  "geen-status": "Geen status"
 };
 
 export function BuddyReadingListPage() {
@@ -36,11 +38,17 @@ export function BuddyReadingListPage() {
   const [readSeriesFilter, setReadSeriesFilter] = useState<string>("alle");
   const [readSortDirection, setReadSortDirection] = useState<"asc" | "desc">("desc");
   const [selectedBookIds, setSelectedBookIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
   const [showShelfPicker, setShowShelfPicker] = useState(false);
   const [addResult, setAddResult] = useState<{ added: number; skipped: number } | null>(null);
+  const [toast, setToast] = useState("");
   const [shelves, setShelves] = useState(() => loadShelves());
   const [newShelfName, setNewShelfName] = useState("");
-  const [pendingCustomShelfId, setPendingCustomShelfId] = useState<string | null>(null);
+  const [selectionBarPosition, setSelectionBarPosition] = useState({ bottom: 96, leftPercent: 50 });
+  const selectionBarDragRef = useRef<{ startY: number; startBottom: number; startX: number; startLeft: number } | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressNextClickRef = useRef(false);
+  const longPressBookIdRef = useRef<string | null>(null);
 
   const aanHetLezen = useMemo(
     () =>
@@ -104,6 +112,11 @@ export function BuddyReadingListPage() {
 
   const backUrl = withBase(basePath, "/profiel");
 
+  function enterSelectionModeWith(id: string) {
+    setSelectionMode(true);
+    setSelectedBookIds((prev) => new Set(prev).add(id));
+  }
+
   function toggleBookSelection(book: Book) {
     setSelectedBookIds((prev) => {
       const next = new Set(prev);
@@ -111,6 +124,34 @@ export function BuddyReadingListPage() {
       else next.add(book.id);
       return next;
     });
+  }
+
+  function handleSelectionBarPointerDown(e: React.PointerEvent) {
+    e.preventDefault();
+    selectionBarDragRef.current = {
+      startY: e.clientY,
+      startBottom: selectionBarPosition.bottom,
+      startX: e.clientX,
+      startLeft: selectionBarPosition.leftPercent
+    };
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  }
+  function handleSelectionBarPointerMove(e: React.PointerEvent) {
+    if (selectionBarDragRef.current == null) return;
+    const { startY, startBottom, startX, startLeft } = selectionBarDragRef.current;
+    const deltaY = startY - e.clientY;
+    const deltaXPercent = ((e.clientX - startX) / window.innerWidth) * 100;
+    let newBottom = Math.round(startBottom + deltaY);
+    let newLeft = startLeft + deltaXPercent;
+    newBottom = Math.max(60, Math.min(500, newBottom));
+    newLeft = Math.max(5, Math.min(95, newLeft));
+    setSelectionBarPosition({ bottom: newBottom, leftPercent: newLeft });
+  }
+  function handleSelectionBarPointerUp(e: React.PointerEvent) {
+    if (selectionBarDragRef.current != null) {
+      selectionBarDragRef.current = null;
+      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    }
   }
 
   function getSelectedSnapshots() {
@@ -125,18 +166,35 @@ export function BuddyReadingListPage() {
     const result = addBookSnapshotsToMyLibrary(snapshots, { status: "wil-ik-lezen" });
     setAddResult(result);
     setSelectedBookIds(new Set());
-    setTimeout(() => setAddResult(null), 3000);
+    setSelectionMode(false);
+    const msg = result.added > 0
+      ? (result.added === 1 ? "1 boek toegevoegd aan TBR." : `${result.added} boeken toegevoegd aan TBR.`)
+        + (result.skipped > 0 ? ` ${result.skipped} stond/stonden al in je lijst.` : "")
+      : result.skipped > 0 ? `${result.skipped} stond/stonden al in je lijst.` : "";
+    if (msg) setToast(msg);
+    setTimeout(() => { setAddResult(null); setToast(""); }, 3000);
   }
 
-  function handleAddToShelf(shelfId: string, status?: ReadStatus) {
+  const SYSTEM_SHELF_IDS = ["wil-ik-lezen", "aan-het-lezen", "gelezen"];
+
+  function handleAddToShelf(shelfId: string) {
     const snapshots = getSelectedSnapshots();
     if (!snapshots.length) return;
-    const result = addBookSnapshotsToMyLibrary(snapshots, status != null ? { status, shelfId } : { shelfId });
+    const options = SYSTEM_SHELF_IDS.includes(shelfId)
+      ? { shelfId }
+      : { status: "geen-status" as const, shelfId };
+    const result = addBookSnapshotsToMyLibrary(snapshots, options);
     setAddResult(result);
     setSelectedBookIds(new Set());
     setShowShelfPicker(false);
-    setPendingCustomShelfId(null);
-    setTimeout(() => setAddResult(null), 3000);
+    setSelectionMode(false);
+    const shelfName = SYSTEM_SHELF_IDS.includes(shelfId) ? STATUS_LABELS[shelfId as ReadStatus] : (shelves.find((s) => s.id === shelfId)?.name ?? "plank");
+    const msg = result.added > 0
+      ? (result.added === 1 ? `1 boek toegevoegd aan "${shelfName}".` : `${result.added} boeken toegevoegd aan "${shelfName}".`)
+        + (result.skipped > 0 ? ` ${result.skipped} stond/stonden al in je lijst.` : "")
+      : result.skipped > 0 ? `${result.skipped} stond/stonden al in je lijst.` : "";
+    if (msg) setToast(msg);
+    setTimeout(() => { setAddResult(null); setToast(""); }, 3000);
   }
 
   if (booksLoading) {
@@ -185,7 +243,7 @@ export function BuddyReadingListPage() {
         </div>
 
         {(subTab === "leeslijst" || subTab === "gelezen") && (
-          <p className="buddy-add-hint">Tik op een boek om het te selecteren en toe te voegen aan je eigen TBR of plank.</p>
+          <p className="buddy-add-hint">Houd een boek lang ingedrukt om de selectiemodus te openen. Tik daarna op de vakjes of op een boek om te selecteren.</p>
         )}
         {subTab === "leeslijst" && (
           <>
@@ -194,13 +252,88 @@ export function BuddyReadingListPage() {
               {aanHetLezen.map((book) => {
                 const selected = selectedBookIds.has(book.id);
                 return (
-                  <button
+                  <div
                     key={book.id}
-                    type="button"
-                    className={`mobile-reading-item mobile-reading-item-readonly buddy-book-selectable ${selected ? "selected" : ""}`}
-                    onClick={() => toggleBookSelection(book)}
+                    className={`mobile-reading-item mobile-reading-item-readonly buddy-book-selectable ${selected ? "selected" : ""} ${selected ? "mobile-reading-item-selected" : ""}`}
                   >
-                    <div className="mobile-reading-main">
+                    {selectionMode && (
+                      <button
+                        type="button"
+                        className={`mobile-reading-checkbox ${selected ? "checked" : ""}`}
+                        onClick={() => toggleBookSelection(book)}
+                        aria-pressed={selected}
+                      >
+                        <span className="mobile-reading-checkbox-icon">{selected ? "✓" : ""}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="mobile-reading-main"
+                      onTouchStart={() => {
+                        if (selectionMode) return;
+                        longPressBookIdRef.current = book.id;
+                        longPressTimerRef.current = setTimeout(() => {
+                          const id = longPressBookIdRef.current;
+                          if (id) {
+                            enterSelectionModeWith(id);
+                            suppressNextClickRef.current = true;
+                            longPressBookIdRef.current = null;
+                          }
+                          longPressTimerRef.current = null;
+                        }, 500);
+                      }}
+                      onTouchEnd={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                        longPressBookIdRef.current = null;
+                      }}
+                      onTouchCancel={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                        longPressBookIdRef.current = null;
+                      }}
+                      onMouseDown={() => {
+                        if (selectionMode) return;
+                        longPressBookIdRef.current = book.id;
+                        longPressTimerRef.current = setTimeout(() => {
+                          const id = longPressBookIdRef.current;
+                          if (id) {
+                            enterSelectionModeWith(id);
+                            suppressNextClickRef.current = true;
+                            longPressBookIdRef.current = null;
+                          }
+                          longPressTimerRef.current = null;
+                        }, 500);
+                      }}
+                      onMouseUp={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                        longPressBookIdRef.current = null;
+                      }}
+                      onMouseLeave={() => {
+                        if (longPressTimerRef.current) {
+                          clearTimeout(longPressTimerRef.current);
+                          longPressTimerRef.current = null;
+                        }
+                        longPressBookIdRef.current = null;
+                      }}
+                      onClick={() => {
+                        if (suppressNextClickRef.current) {
+                          suppressNextClickRef.current = false;
+                          return;
+                        }
+                        if (selectionMode) {
+                          toggleBookSelection(book);
+                          return;
+                        }
+                      }}
+                    >
                       <div className="mobile-reading-cover">
                         {book.coverUrl ? (
                           <img src={book.coverUrl} alt={book.title} />
@@ -209,7 +342,6 @@ export function BuddyReadingListPage() {
                             {book.title.charAt(0).toUpperCase()}
                           </div>
                         )}
-                        {selected && <span className="buddy-book-check">✓</span>}
                       </div>
                       <div className="mobile-reading-text">
                         {book.seriesName && (
@@ -224,8 +356,8 @@ export function BuddyReadingListPage() {
                           {book.pageCount != null ? `${book.pageCount} blz` : "—"}
                         </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 );
               })}
               {aanHetLezen.length === 0 && (
@@ -238,38 +370,61 @@ export function BuddyReadingListPage() {
               {tbr.map((book) => {
                 const selected = selectedBookIds.has(book.id);
                 return (
-                  <button
+                  <div
                     key={book.id}
-                    type="button"
-                    className={`mobile-reading-item mobile-reading-item-readonly buddy-book-selectable ${selected ? "selected" : ""}`}
-                    onClick={() => toggleBookSelection(book)}
+                    className={`mobile-reading-item mobile-reading-item-readonly buddy-book-selectable ${selected ? "selected" : ""} ${selected ? "mobile-reading-item-selected" : ""}`}
                   >
-                    <div className="mobile-reading-main">
+                    {selectionMode && (
+                      <button
+                        type="button"
+                        className={`mobile-reading-checkbox ${selected ? "checked" : ""}`}
+                        onClick={() => toggleBookSelection(book)}
+                        aria-pressed={selected}
+                      >
+                        <span className="mobile-reading-checkbox-icon">{selected ? "✓" : ""}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="mobile-reading-main"
+                      onTouchStart={() => {
+                        if (selectionMode) return;
+                        longPressBookIdRef.current = book.id;
+                        longPressTimerRef.current = setTimeout(() => {
+                          const id = longPressBookIdRef.current;
+                          if (id) { enterSelectionModeWith(id); suppressNextClickRef.current = true; longPressBookIdRef.current = null; }
+                          longPressTimerRef.current = null;
+                        }, 500);
+                      }}
+                      onTouchEnd={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; longPressBookIdRef.current = null; }}
+                      onTouchCancel={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; longPressBookIdRef.current = null; }}
+                      onMouseDown={() => {
+                        if (selectionMode) return;
+                        longPressBookIdRef.current = book.id;
+                        longPressTimerRef.current = setTimeout(() => {
+                          const id = longPressBookIdRef.current;
+                          if (id) { enterSelectionModeWith(id); suppressNextClickRef.current = true; longPressBookIdRef.current = null; }
+                          longPressTimerRef.current = null;
+                        }, 500);
+                      }}
+                      onMouseUp={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; longPressBookIdRef.current = null; }}
+                      onMouseLeave={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; longPressBookIdRef.current = null; }}
+                      onClick={() => {
+                        if (suppressNextClickRef.current) { suppressNextClickRef.current = false; return; }
+                        if (selectionMode) { toggleBookSelection(book); return; }
+                      }}
+                    >
                       <div className="mobile-reading-cover">
-                        {book.coverUrl ? (
-                          <img src={book.coverUrl} alt={book.title} />
-                        ) : (
-                          <div className="mobile-reading-placeholder">
-                            {book.title.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        {selected && <span className="buddy-book-check">✓</span>}
+                        {book.coverUrl ? <img src={book.coverUrl} alt={book.title} /> : <div className="mobile-reading-placeholder">{book.title.charAt(0).toUpperCase()}</div>}
                       </div>
                       <div className="mobile-reading-text">
-                        {book.seriesName && (
-                          <div className="mobile-reading-series-badge">
-                            {book.seriesName}
-                            {book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}
-                          </div>
-                        )}
+                        {book.seriesName && <div className="mobile-reading-series-badge">{book.seriesName}{book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}</div>}
                         <div className="mobile-reading-title">{book.title}</div>
                         <div className="mobile-reading-author">{book.authors}</div>
-                        <div className="mobile-reading-pages">
-                          {book.pageCount != null ? `${book.pageCount} blz` : "—"}
-                        </div>
+                        <div className="mobile-reading-pages">{book.pageCount != null ? `${book.pageCount} blz` : "—"}</div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 );
               })}
               {tbr.length === 0 && (
@@ -316,40 +471,61 @@ export function BuddyReadingListPage() {
               {filteredAndSortedRead.map((book) => {
                 const selected = selectedBookIds.has(book.id);
                 return (
-                  <button
+                  <div
                     key={book.id}
-                    type="button"
-                    className={`mobile-reading-item mobile-reading-item-simple mobile-reading-item-readonly buddy-book-selectable ${selected ? "selected" : ""}`}
-                    onClick={() => toggleBookSelection(book)}
+                    className={`mobile-reading-item mobile-reading-item-simple mobile-reading-item-readonly buddy-book-selectable ${selected ? "selected" : ""} ${selected ? "mobile-reading-item-selected" : ""}`}
                   >
-                    <div className="mobile-reading-main">
+                    {selectionMode && (
+                      <button
+                        type="button"
+                        className={`mobile-reading-checkbox ${selected ? "checked" : ""}`}
+                        onClick={() => toggleBookSelection(book)}
+                        aria-pressed={selected}
+                      >
+                        <span className="mobile-reading-checkbox-icon">{selected ? "✓" : ""}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="mobile-reading-main"
+                      onTouchStart={() => {
+                        if (selectionMode) return;
+                        longPressBookIdRef.current = book.id;
+                        longPressTimerRef.current = setTimeout(() => {
+                          const id = longPressBookIdRef.current;
+                          if (id) { enterSelectionModeWith(id); suppressNextClickRef.current = true; longPressBookIdRef.current = null; }
+                          longPressTimerRef.current = null;
+                        }, 500);
+                      }}
+                      onTouchEnd={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; longPressBookIdRef.current = null; }}
+                      onTouchCancel={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; longPressBookIdRef.current = null; }}
+                      onMouseDown={() => {
+                        if (selectionMode) return;
+                        longPressBookIdRef.current = book.id;
+                        longPressTimerRef.current = setTimeout(() => {
+                          const id = longPressBookIdRef.current;
+                          if (id) { enterSelectionModeWith(id); suppressNextClickRef.current = true; longPressBookIdRef.current = null; }
+                          longPressTimerRef.current = null;
+                        }, 500);
+                      }}
+                      onMouseUp={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; longPressBookIdRef.current = null; }}
+                      onMouseLeave={() => { if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null; longPressBookIdRef.current = null; }}
+                      onClick={() => {
+                        if (suppressNextClickRef.current) { suppressNextClickRef.current = false; return; }
+                        if (selectionMode) { toggleBookSelection(book); return; }
+                      }}
+                    >
                       <div className="mobile-reading-cover">
-                        {book.coverUrl ? (
-                          <img src={book.coverUrl} alt={book.title} />
-                        ) : (
-                          <div className="mobile-reading-placeholder">
-                            {book.title.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        {selected && <span className="buddy-book-check">✓</span>}
+                        {book.coverUrl ? <img src={book.coverUrl} alt={book.title} /> : <div className="mobile-reading-placeholder">{book.title.charAt(0).toUpperCase()}</div>}
                       </div>
                       <div className="mobile-reading-text">
-                        {book.seriesName && (
-                          <div className="mobile-reading-series-badge">
-                            {book.seriesName}
-                            {book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}
-                          </div>
-                        )}
+                        {book.seriesName && <div className="mobile-reading-series-badge">{book.seriesName}{book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}</div>}
                         <div className="mobile-reading-title">{book.title}</div>
                         <div className="mobile-reading-author">{book.authors}</div>
-                        {book.finishedAt && (
-                          <div className="mobile-reading-finished">
-                            Uitgelezen: {book.finishedAt}
-                          </div>
-                        )}
+                        {book.finishedAt && <div className="mobile-reading-finished">Uitgelezen: {book.finishedAt}</div>}
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                  </div>
                 );
               })}
               {(filteredAndSortedRead.length === 0 && (
@@ -361,92 +537,100 @@ export function BuddyReadingListPage() {
           </>
         )}
 
-        {selectedBookIds.size > 0 && (
-          <div className="buddy-selection-bar">
-            <span className="buddy-selection-count">{selectedBookIds.size} geselecteerd</span>
-            <button type="button" className="primary-button buddy-selection-btn" onClick={handleAddToTbr}>
+        {selectionMode && (
+          <div
+            className="mobile-selection-bar"
+            style={{
+              bottom: `${selectionBarPosition.bottom}px`,
+              left: `${selectionBarPosition.leftPercent}%`,
+              transform: "translateX(-50%)"
+            }}
+          >
+            <div
+              className="mobile-selection-bar-drag-handle"
+              onPointerDown={handleSelectionBarPointerDown}
+              onPointerMove={handleSelectionBarPointerMove}
+              onPointerUp={handleSelectionBarPointerUp}
+              onPointerLeave={handleSelectionBarPointerUp}
+              role="button"
+              tabIndex={0}
+              aria-label="Versleep om het menu te verplaatsen"
+            >
+              ⋮⋮
+            </div>
+            <span className="mobile-selection-count">{selectedBookIds.size} geselecteerd</span>
+            <button
+              type="button"
+              className="primary-button mobile-selection-add"
+              disabled={selectedBookIds.size === 0}
+              onClick={handleAddToTbr}
+            >
               Toevoegen aan mijn TBR
             </button>
-            <button type="button" className="secondary-button buddy-selection-btn" onClick={() => setShowShelfPicker(true)}>
+            <button
+              type="button"
+              className="secondary-button buddy-selection-btn"
+              disabled={selectedBookIds.size === 0}
+              onClick={() => setShowShelfPicker(true)}
+            >
               Toevoegen aan plank
-            </button>
-            <button type="button" className="link-button buddy-selection-clear" onClick={() => setSelectedBookIds(new Set())}>
-              Selectie wissen
             </button>
             {showShelfPicker && (
               <div className="buddy-shelf-picker">
-                <p className="buddy-shelf-picker-title">
-                  {pendingCustomShelfId ? "Kies status voor deze plank" : "Kies een plank"}
-                </p>
-                {pendingCustomShelfId ? (
-                  <div className="custom-shelf-status-picker">
-                    {(["wil-ik-lezen", "aan-het-lezen", "gelezen"] as const).map((status) => (
-                      <button
-                        key={status}
-                        type="button"
-                        className="buddy-shelf-option"
-                        onClick={() => handleAddToShelf(pendingCustomShelfId, status)}
-                      >
-                        {STATUS_LABELS[status]}
-                      </button>
-                    ))}
-                    <button type="button" className="link-button" onClick={() => setPendingCustomShelfId(null)}>
-                      Terug
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    {shelves.map((shelf) => (
-                      <button
-                        key={shelf.id}
-                        type="button"
-                        className="buddy-shelf-option"
-                        onClick={() => {
-                          if (shelf.system) {
-                            handleAddToShelf(shelf.id);
-                          } else {
-                            setPendingCustomShelfId(shelf.id);
-                          }
-                        }}
-                      >
-                        {shelf.name}
-                      </button>
-                    ))}
-                    <div className="buddy-new-shelf">
-                      <input
-                        type="text"
-                        value={newShelfName}
-                        onChange={(e) => setNewShelfName(e.target.value)}
-                        placeholder="Nieuwe plank naam…"
-                        className="buddy-new-shelf-input"
-                      />
-                      <button
-                        type="button"
-                        className="buddy-shelf-option buddy-new-shelf-btn"
-                        disabled={!newShelfName.trim()}
-                        onClick={() => {
-                          const name = newShelfName.trim();
-                          if (!name) return;
-                          const newShelf = { id: `shelf-${Date.now()}`, name };
-                          const next = [...shelves, newShelf];
-                          saveShelves(next);
-                          setShelves(next);
-                          setPendingCustomShelfId(newShelf.id);
-                          setNewShelfName("");
-                        }}
-                      >
-                        Nieuwe plank aanmaken
-                      </button>
-                    </div>
-                  </>
-                )}
-                {!pendingCustomShelfId && (
-                  <button type="button" className="link-button" onClick={() => { setShowShelfPicker(false); setNewShelfName(""); setPendingCustomShelfId(null); }}>
-                    Annuleren
+                <p className="buddy-shelf-picker-title">Kies een plank</p>
+                {shelves.map((shelf) => (
+                  <button
+                    key={shelf.id}
+                    type="button"
+                    className="buddy-shelf-option"
+                    onClick={() => handleAddToShelf(shelf.id)}
+                  >
+                    {shelf.name}
                   </button>
-                )}
+                ))}
+                <div className="buddy-new-shelf">
+                  <input
+                    type="text"
+                    value={newShelfName}
+                    onChange={(e) => setNewShelfName(e.target.value)}
+                    placeholder="Nieuwe plank naam…"
+                    className="buddy-new-shelf-input"
+                  />
+                  <button
+                    type="button"
+                    className="buddy-shelf-option buddy-new-shelf-btn"
+                    disabled={!newShelfName.trim()}
+                    onClick={() => {
+                      const name = newShelfName.trim();
+                      if (!name) return;
+                      const newShelf = { id: `shelf-${Date.now()}`, name };
+                      const next = [...shelves, newShelf];
+                      saveShelves(next);
+                      setShelves(next);
+                      handleAddToShelf(newShelf.id);
+                      setNewShelfName("");
+                    }}
+                  >
+                    Nieuwe plank aanmaken
+                  </button>
+                </div>
+                <button type="button" className="link-button" onClick={() => { setShowShelfPicker(false); setNewShelfName(""); }}>
+                  Annuleren
+                </button>
               </div>
             )}
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                setSelectedBookIds(new Set());
+                setSelectionMode(false);
+                setShowShelfPicker(false);
+                setNewShelfName("");
+              }}
+            >
+              Selectiemodus sluiten
+            </button>
           </div>
         )}
 
@@ -457,6 +641,7 @@ export function BuddyReadingListPage() {
           </p>
         )}
       </section>
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }

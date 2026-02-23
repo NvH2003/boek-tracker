@@ -163,16 +163,48 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
   const [shareWithBuddyError, setShareWithBuddyError] = useState("");
   const [showDeleteSelectedModal, setShowDeleteSelectedModal] = useState(false);
   const [newShelfName, setNewShelfName] = useState("");
-  const [pendingCustomShelfId, setPendingCustomShelfId] = useState<string | null>(null);
+  const [showModalStatusMenu, setShowModalStatusMenu] = useState(false);
+  const [selectionBarPosition, setSelectionBarPosition] = useState({ bottom: 96, leftPercent: 50 });
+  const [toast, setToast] = useState("");
+  const selectionBarDragRef = useRef<{ startY: number; startBottom: number; startX: number; startLeft: number } | null>(null);
 
   const STATUS_LABELS: Record<ReadStatus, string> = {
     "wil-ik-lezen": "Wil ik lezen",
     "aan-het-lezen": "Aan het lezen",
-    gelezen: "Gelezen"
+    gelezen: "Gelezen",
+    "geen-status": "Geen status"
   };
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressNextClickRef = useRef(false);
   const longPressBookIdRef = useRef<string | null>(null);
+
+  function handleSelectionBarPointerDown(e: React.PointerEvent) {
+    e.preventDefault();
+    selectionBarDragRef.current = {
+      startY: e.clientY,
+      startBottom: selectionBarPosition.bottom,
+      startX: e.clientX,
+      startLeft: selectionBarPosition.leftPercent
+    };
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+  }
+  function handleSelectionBarPointerMove(e: React.PointerEvent) {
+    if (selectionBarDragRef.current == null) return;
+    const { startY, startBottom, startX, startLeft } = selectionBarDragRef.current;
+    const deltaY = startY - e.clientY;
+    const deltaXPercent = ((e.clientX - startX) / window.innerWidth) * 100;
+    let newBottom = Math.round(startBottom + deltaY);
+    let newLeft = startLeft + deltaXPercent;
+    newBottom = Math.max(60, Math.min(500, newBottom));
+    newLeft = Math.max(5, Math.min(95, newLeft));
+    setSelectionBarPosition({ bottom: newBottom, leftPercent: newLeft });
+  }
+  function handleSelectionBarPointerUp(e: React.PointerEvent) {
+    if (selectionBarDragRef.current != null) {
+      selectionBarDragRef.current = null;
+      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    }
+  }
 
   function toggleBookSelected(id: string) {
     setSelectedBookIds((prev) => {
@@ -263,28 +295,33 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
     "gelezen": "gelezen"
   };
 
-  function addBooksToShelf(shelfId: string, explicitStatus?: ReadStatus) {
-    const status = explicitStatus ?? SYSTEM_SHELF_STATUS[shelfId];
-    const isCustomShelf = !SYSTEM_SHELF_STATUS[shelfId];
+  function getBookPlankNames(book: Book): string[] {
+    const ids = book.shelfIds ?? [];
+    return ids
+      .map((id) => shelves.find((s) => s.id === id)?.name)
+      .filter((name): name is string => name != null)
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  function addBooksToShelf(shelfId: string) {
+    const status = SYSTEM_SHELF_STATUS[shelfId];
+    const isCustomShelf = !status;
     const ids = Array.from(selectedBookIds);
     const next = books.map((b) => {
       if (!ids.includes(b.id)) return b;
       const shelfIds = b.shelfIds ?? [];
-      if (status) {
-        const addToShelfIds = isCustomShelf && !shelfIds.includes(shelfId);
-        return {
-          ...b,
-          status,
-          ...(addToShelfIds ? { shelfIds: [...shelfIds, shelfId] } : {})
-        };
+      if (isCustomShelf) {
+        if (shelfIds.includes(shelfId)) return b;
+        return { ...b, shelfIds: [...shelfIds, shelfId] };
       }
-      if (shelfIds.includes(shelfId)) return b;
-      return { ...b, shelfIds: [...shelfIds, shelfId] };
+      return { ...b, status: status! };
     });
     updateBooks(next);
     setSelectedBookIds(new Set());
     setShowAddToShelfModal(false);
-    setPendingCustomShelfId(null);
+    const shelfName = status ? STATUS_LABELS[status] : (shelves.find((s) => s.id === shelfId)?.name ?? "plank");
+    setToast(ids.length === 1 ? `Boek toegevoegd aan "${shelfName}".` : `${ids.length} boeken toegevoegd aan "${shelfName}".`);
+    window.setTimeout(() => setToast(""), 2500);
   }
 
   function getSortedTbrBooks() {
@@ -924,6 +961,16 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                       key={book.id}
                       className={`mobile-reading-item ${isSelected ? "mobile-reading-item-selected" : ""}`}
                     >
+                      {selectionMode && (
+                        <button
+                          type="button"
+                          className={`mobile-reading-checkbox ${isSelected ? "checked" : ""}`}
+                          onClick={() => toggleBookSelected(book.id)}
+                          aria-pressed={isSelected}
+                        >
+                          <span className="mobile-reading-checkbox-icon">{isSelected ? "✓" : ""}</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="mobile-reading-main"
@@ -1023,6 +1070,14 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                           )}
                           <div className="mobile-reading-title">{book.title}</div>
                           <div className="mobile-reading-author">{book.authors}</div>
+                          {getBookPlankNames(book).length > 0 && (
+                            <div className="mobile-reading-planks">
+                              <span className="mobile-reading-planks-label">Planken:</span>
+                              {getBookPlankNames(book).map((name) => (
+                                <span key={name} className="plank-pill plank-pill-inline">{name}</span>
+                              ))}
+                            </div>
+                          )}
                           {!showDailyGoalProgress && (
                             <div className="mobile-reading-pages">
                               {book.pageCount != null
@@ -1069,6 +1124,16 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                     key={book.id}
                     className={`mobile-reading-item ${isSelected ? "mobile-reading-item-selected" : ""}`}
                   >
+                    {selectionMode && (
+                      <button
+                        type="button"
+                        className={`mobile-reading-checkbox ${isSelected ? "checked" : ""}`}
+                        onClick={() => toggleBookSelected(book.id)}
+                        aria-pressed={isSelected}
+                      >
+                        <span className="mobile-reading-checkbox-icon">{isSelected ? "✓" : ""}</span>
+                      </button>
+                    )}
                     <div className="mobile-reading-left">
                       <div className="mobile-reading-order">
                         <button
@@ -1187,6 +1252,14 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                           )}
                           <div className="mobile-reading-title">{book.title}</div>
                           <div className="mobile-reading-author">{book.authors}</div>
+                          {getBookPlankNames(book).length > 0 && (
+                            <div className="mobile-reading-planks">
+                              <span className="mobile-reading-planks-label">Planken:</span>
+                              {getBookPlankNames(book).map((name) => (
+                                <span key={name} className="plank-pill plank-pill-inline">{name}</span>
+                              ))}
+                            </div>
+                          )}
                           <div className="mobile-reading-pages">
                             {book.pageCount != null
                               ? `${book.pageCount} blz`
@@ -1268,6 +1341,16 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                     key={book.id}
                     className={`mobile-reading-item mobile-reading-item-simple ${isSelected ? "mobile-reading-item-selected" : ""}`}
                   >
+                    {selectionMode && (
+                      <button
+                        type="button"
+                        className={`mobile-reading-checkbox ${isSelected ? "checked" : ""}`}
+                        onClick={() => toggleBookSelected(book.id)}
+                        aria-pressed={isSelected}
+                      >
+                        <span className="mobile-reading-checkbox-icon">{isSelected ? "✓" : ""}</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="mobile-reading-main"
@@ -1367,6 +1450,14 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                         )}
                         <div className="mobile-reading-title">{book.title}</div>
                         <div className="mobile-reading-author">{book.authors}</div>
+                        {getBookPlankNames(book).length > 0 && (
+                          <div className="mobile-reading-planks">
+                            <span className="mobile-reading-planks-label">Planken:</span>
+                            {getBookPlankNames(book).map((name) => (
+                              <span key={name} className="plank-pill plank-pill-inline">{name}</span>
+                            ))}
+                          </div>
+                        )}
                         {book.finishedAt && (
                           <div className="mobile-reading-finished">
                             Uitgelezen: {book.finishedAt}
@@ -1386,14 +1477,34 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
         </section>
       )}
 
-      {selectionMode && selectedBookIds.size > 0 && (
-        <div className="mobile-selection-bar">
+      {selectionMode && (
+        <div
+          className="mobile-selection-bar"
+          style={{
+            bottom: `${selectionBarPosition.bottom}px`,
+            left: `${selectionBarPosition.leftPercent}%`,
+            transform: "translateX(-50%)"
+          }}
+        >
+          <div
+            className="mobile-selection-bar-drag-handle"
+            onPointerDown={handleSelectionBarPointerDown}
+            onPointerMove={handleSelectionBarPointerMove}
+            onPointerUp={handleSelectionBarPointerUp}
+            onPointerLeave={handleSelectionBarPointerUp}
+            role="button"
+            tabIndex={0}
+            aria-label="Versleep om het menu te verplaatsen"
+          >
+            ⋮⋮
+          </div>
           <span className="mobile-selection-count">
             {selectedBookIds.size} geselecteerd
           </span>
           <button
             type="button"
             className="primary-button mobile-selection-add"
+            disabled={selectedBookIds.size === 0}
             onClick={() => setShowAddToShelfModal(true)}
           >
             Toevoegen aan plank
@@ -1401,6 +1512,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
           <button
             type="button"
             className="primary-button"
+            disabled={selectedBookIds.size === 0}
             onClick={() => { setShareWithBuddyError(""); setShowShareWithBuddyModal(true); }}
           >
             Delen met Boekbuddy
@@ -1408,6 +1520,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
           <button
             type="button"
             className="secondary-button destructive"
+            disabled={selectedBookIds.size === 0}
             onClick={() => setShowDeleteSelectedModal(true)}
           >
             Verwijderen
@@ -1468,79 +1581,53 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
           >
             <h3>Toevoegen aan plank</h3>
             <p className="modal-intro">
-              {pendingCustomShelfId
-                ? "Kies status voor deze plank"
-                : `Kies een plank voor ${selectedBookIds.size} boek${selectedBookIds.size === 1 ? "" : "en"}.`}
+              Kies een plank voor {selectedBookIds.size} boek{selectedBookIds.size === 1 ? "" : "en"}. De huidige status van elk boek blijft behouden.
             </p>
-            {pendingCustomShelfId ? (
-              <ul className="add-to-shelf-list">
-                {(["wil-ik-lezen", "aan-het-lezen", "gelezen"] as const).map((status) => (
-                  <li key={status}>
-                    <button
-                      type="button"
-                      className="add-to-shelf-item"
-                      onClick={() => addBooksToShelf(pendingCustomShelfId, status)}
-                    >
-                      {STATUS_LABELS[status]}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <>
-                <ul className="add-to-shelf-list">
-                  {shelves.map((shelf) => (
-                    <li key={shelf.id}>
-                      <button
-                        type="button"
-                        className="add-to-shelf-item"
-                        onClick={() => {
-                          if (shelf.system) {
-                            addBooksToShelf(shelf.id);
-                          } else {
-                            setPendingCustomShelfId(shelf.id);
-                          }
-                        }}
-                      >
-                        {shelf.name}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <div className="add-to-shelf-new">
-                  <input
-                    type="text"
-                    value={newShelfName}
-                    onChange={(e) => setNewShelfName(e.target.value)}
-                    placeholder="Nieuwe plank naam…"
-                    className="add-to-shelf-new-input"
-                  />
+            <ul className="add-to-shelf-list">
+              {shelves.map((shelf) => (
+                <li key={shelf.id}>
                   <button
                     type="button"
-                    className="add-to-shelf-item add-to-shelf-new-btn"
-                    disabled={!newShelfName.trim()}
-                    onClick={() => {
-                      const name = newShelfName.trim();
-                      if (!name) return;
-                      const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
-                      const next = [...shelves, newShelf];
-                      saveShelves(next);
-                      setShelves(next);
-                      setPendingCustomShelfId(newShelf.id);
-                      setNewShelfName("");
-                    }}
+                    className="add-to-shelf-item"
+                    onClick={() => addBooksToShelf(shelf.id)}
                   >
-                    Nieuwe plank aanmaken
+                    {shelf.name}
                   </button>
-                </div>
-              </>
-            )}
+                </li>
+              ))}
+            </ul>
+            <div className="add-to-shelf-new">
+              <input
+                type="text"
+                value={newShelfName}
+                onChange={(e) => setNewShelfName(e.target.value)}
+                placeholder="Nieuwe plank naam…"
+                className="add-to-shelf-new-input"
+              />
+              <button
+                type="button"
+                className="add-to-shelf-item add-to-shelf-new-btn"
+                disabled={!newShelfName.trim()}
+                onClick={() => {
+                  const name = newShelfName.trim();
+                  if (!name) return;
+                  const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
+                  const next = [...shelves, newShelf];
+                  saveShelves(next);
+                  setShelves(next);
+                  addBooksToShelf(newShelf.id);
+                  setNewShelfName("");
+                }}
+              >
+                Nieuwe plank aanmaken
+              </button>
+            </div>
             <button
               type="button"
               className="secondary-button"
-              onClick={() => { setShowAddToShelfModal(false); setNewShelfName(""); setPendingCustomShelfId(null); }}
+              onClick={() => { setShowAddToShelfModal(false); setNewShelfName(""); }}
             >
-              {pendingCustomShelfId ? "Terug" : "Sluiten"}
+              Sluiten
             </button>
           </div>
         </div>
@@ -1576,6 +1663,8 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                         setSelectedBookIds(new Set());
                         setShowShareWithBuddyModal(false);
                         setShareWithBuddyError("");
+                        setToast(snapshots.length === 1 ? `Boek gedeeld met ${friend}.` : `${snapshots.length} boeken gedeeld met ${friend}.`);
+                        window.setTimeout(() => setToast(""), 2500);
                       } else {
                         setShareWithBuddyError(result.error);
                       }
@@ -1610,6 +1699,51 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
           >
             <h3>{selectedBook.title}</h3>
             <p className="modal-intro">{selectedBook.authors}</p>
+
+            <div className="modal-book-status-row">
+              <span className="modal-book-status-label">Status:</span>
+              <div className="status-dropdown">
+                <button
+                  type="button"
+                  className={`modal-book-status-select status-select status-dropdown-trigger status-select-${selectedBook.status}`}
+                  onClick={() => setShowModalStatusMenu((v) => !v)}
+                >
+                  {STATUS_LABELS[selectedBook.status]}
+                  <span className="status-dropdown-caret">▾</span>
+                </button>
+                {showModalStatusMenu && (
+                  <div className="status-dropdown-menu">
+                    {(Object.entries(STATUS_LABELS) as [ReadStatus, string][])
+                      .map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`book-detail-status-pill book-detail-status-pill-${value} ${
+                            selectedBook.status === value ? "selected" : ""
+                          }`}
+                          onClick={() => {
+                            updateBookStatus(selectedBook.id, value);
+                            setSelectedBook({ ...selectedBook, status: value });
+                            setShowModalStatusMenu(false);
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {getBookPlankNames(selectedBook).length > 0 && (
+              <div className="modal-book-planks-row">
+                <span className="modal-book-status-label">Plank:</span>
+                <div className="modal-book-plank-pills">
+                  {getBookPlankNames(selectedBook).map((name) => (
+                    <span key={name} className="plank-pill plank-pill-inline">{name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="modal-page-count-edit">
               <label className="modal-page-count-label">Aantal pagina&apos;s:</label>
@@ -1760,6 +1894,9 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                 onClick={() => {
                   if (window.confirm("Weet je zeker dat je dit boek wilt verwijderen?")) {
                     removeBook(selectedBook.id);
+                    setSelectedBook(null);
+                    setToast("Boek verwijderd.");
+                    window.setTimeout(() => setToast(""), 2500);
                   }
                 }}
               >
@@ -1776,6 +1913,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
           </div>
         </div>
       )}
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }

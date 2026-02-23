@@ -1,4 +1,4 @@
-export type ReadStatus = "wil-ik-lezen" | "aan-het-lezen" | "gelezen";
+export type ReadStatus = "wil-ik-lezen" | "aan-het-lezen" | "gelezen" | "geen-status";
 
 export interface Book {
   id: string;

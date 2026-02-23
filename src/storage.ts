@@ -577,7 +577,7 @@ export function addBookSnapshotsToMyLibrary(
     "aan-het-lezen": "aan-het-lezen",
     gelezen: "gelezen"
   };
-  const status =
+  const status: ReadStatus =
     options.status ??
     (options.shelfId && systemStatus[options.shelfId]) ??
     "wil-ik-lezen";

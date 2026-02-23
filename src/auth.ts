@@ -65,10 +65,12 @@ export function clearCurrentUser() {
 
 let cachedUsernames: string[] = [];
 
-async function refreshUsernamesCache() {
-  if (!supabase) return;
-  const { data } = await supabase.from("profiles").select("username");
+async function refreshUsernamesCache(): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!supabase) return { ok: true };
+  const { data, error } = await supabase.from("profiles").select("username");
+  if (error) return { ok: false, error: error.message };
   cachedUsernames = (data ?? []).map((r: { username: string }) => r.username);
+  return { ok: true };
 }
 
 /** Lijst van alle gebruikersnamen (lokaal of uit Supabase). */
@@ -77,9 +79,10 @@ export function getExistingUsernames(): string[] {
   return getAccounts().map((a) => a.username);
 }
 
-/** Na inloggen of app-load met session: cache vullen (Supabase). */
-export async function refreshAuthCache(): Promise<void> {
-  if (isSupabaseConfigured()) await refreshUsernamesCache();
+/** Na inloggen of app-load met session: cache vullen (Supabase). Geeft fout terug bij mislukken. */
+export async function refreshAuthCache(): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (isSupabaseConfigured()) return refreshUsernamesCache();
+  return { ok: true };
 }
 
 /** Controleer of er een Supabase-session is en zet username in localStorage. Roep aan bij app start. */

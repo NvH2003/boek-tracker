@@ -5,7 +5,8 @@ import { ReadStatus, Shelf } from "../types";
 const STATUS_LABELS: Record<ReadStatus, string> = {
   "wil-ik-lezen": "Wil ik lezen",
   "aan-het-lezen": "Aan het lezen",
-  gelezen: "Gelezen"
+  gelezen: "Gelezen",
+  "geen-status": "Geen status"
 };
 import { useBasePath, withBase } from "../routing";
 import { useZoom } from "../ZoomContext";
@@ -66,17 +67,18 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
   const [sharedInbox, setSharedInbox] = useState(() => loadSharedInbox());
   const [showSharedInboxModal, setShowSharedInboxModal] = useState(false);
   const [sharedAddMessage, setSharedAddMessage] = useState<{ added: number; skipped: number } | null>(null);
+  const [toast, setToast] = useState("");
   /** Per shared-item index: set van boek-indices die geselecteerd zijn */
   const [selectedSharedBookIndices, setSelectedSharedBookIndices] = useState<Map<number, Set<number>>>(() => new Map());
   const [showShelfPickerForItem, setShowShelfPickerForItem] = useState<number | null>(null);
   const [newShelfNameInbox, setNewShelfNameInbox] = useState("");
   /** Bij eigen plank: kies eerst status voordat we toevoegen */
-  const [pendingCustomShelf, setPendingCustomShelf] = useState<{ itemIndex: number; shelfId: string; shelfName: string } | null>(null);
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [deleteAccountPassword, setDeleteAccountPassword] = useState("");
   const [deleteAccountError, setDeleteAccountError] = useState("");
   const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
   const [usernamesRefresh, setUsernamesRefresh] = useState(0);
+  const [usernamesLoadError, setUsernamesLoadError] = useState<string | null>(null);
 
   // Zoekresultaten: bestaande accounts die matchen met zoektekst, exclusief jezelf (usernamesRefresh zorgt voor herberekenen na cache-refresh)
   const searchResults = (() => {
@@ -130,14 +132,28 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
     return selectedSharedBookIndices.get(itemIndex)?.size ?? 0;
   }
 
-  // Bij openen van Profiel en bij focus op zoekveld: gebruikerslijst vernieuwen (Supabase) zodat verwijderde accounts niet meer in Boekbuddies verschijnen
+  // Bij openen van Profiel: gebruikerslijst vernieuwen (Supabase)
   useEffect(() => {
-    refreshAuthCache().then(() => setUsernamesRefresh((v) => v + 1));
+    refreshAuthCache().then((res) => {
+      if (res.ok) {
+        setUsernamesRefresh((v) => v + 1);
+        setUsernamesLoadError(null);
+      } else {
+        setUsernamesLoadError(res.error);
+      }
+    });
   }, []);
 
   async function refreshBoekbuddiesList() {
-    await refreshAuthCache();
-    setUsernamesRefresh((v) => v + 1);
+    setUsernamesLoadError(null);
+    const res = await refreshAuthCache();
+    if (res.ok) {
+      setUsernamesRefresh((v) => v + 1);
+      setToast("Lijst vernieuwd.");
+      window.setTimeout(() => setToast(""), 2000);
+    } else {
+      setUsernamesLoadError(res.error);
+    }
   }
 
   // Keep shelves, display name, friends/requests and shared inbox in sync if another tab edits them
@@ -455,6 +471,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
         )}
 
         <h3 className="profile-subtitle">Zoek Boekbuddies</h3>
+        <p className="profile-search-hint">De accountlijst wordt geladen bij openen en bij klikken in het zoekveld. Zie je iemand niet? Klik in het veld of op Vernieuwen.</p>
         <div className="profile-search-wrap">
           <input
             type="text"
@@ -465,7 +482,11 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
             className="profile-search-input"
             autoComplete="username"
           />
+          <button type="button" className="secondary-button profile-refresh-btn" onClick={refreshBoekbuddiesList}>
+            Vernieuwen
+          </button>
         </div>
+        {usernamesLoadError && <p className="form-error">Lijst kon niet worden geladen: {usernamesLoadError}</p>}
         {friendError && <p className="form-error">{friendError}</p>}
         {searchQuery.trim() && (
           <div className="profile-search-results">
@@ -658,7 +679,9 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                         refreshSharedInbox();
                         clearSelectionForItem(itemIndex);
                         setShowShelfPickerForItem(null);
-                        setTimeout(() => setSharedAddMessage(null), 4000);
+                        const msg = result.added > 0 ? (result.added === 1 ? "1 boek toegevoegd aan TBR." : `${result.added} boeken toegevoegd aan TBR.`) + (result.skipped > 0 ? ` ${result.skipped} stond/stonden al in je lijst.` : "") : (result.skipped > 0 ? `${result.skipped} stond/stonden al in je lijst.` : "");
+                        if (msg) setToast(msg);
+                        setTimeout(() => { setSharedAddMessage(null); setToast(""); }, 4000);
                       }}
                     >
                       Alles naar TBR
@@ -674,7 +697,9 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                             setSharedAddMessage(result);
                             refreshSharedInbox();
                             clearSelectionForItem(itemIndex);
-                            setTimeout(() => setSharedAddMessage(null), 4000);
+                            const msg = result.added > 0 ? (result.added === 1 ? "1 boek toegevoegd aan TBR." : `${result.added} boeken toegevoegd aan TBR.`) + (result.skipped > 0 ? ` ${result.skipped} stond/stonden al in je lijst.` : "") : (result.skipped > 0 ? `${result.skipped} stond/stonden al in je lijst.` : "");
+                            if (msg) setToast(msg);
+                            setTimeout(() => { setSharedAddMessage(null); setToast(""); }, 4000);
                           }}
                         >
                           Geselecteerde ({getSelectedCount(itemIndex)}) naar TBR
@@ -684,7 +709,6 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                               type="button"
                               className="secondary-button shared-inbox-btn"
                               onClick={() => {
-                                if (showShelfPickerForItem === itemIndex) setPendingCustomShelf(null);
                                 setShowShelfPickerForItem(showShelfPickerForItem === itemIndex ? null : itemIndex);
                               }}
                             >
@@ -692,84 +716,63 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                             </button>
                           {showShelfPickerForItem === itemIndex && (
                             <div className="shared-inbox-shelf-picker">
-                              {pendingCustomShelf?.itemIndex === itemIndex ? (
-                                <div className="custom-shelf-status-picker">
-                                  <p className="custom-shelf-status-label">Status voor &quot;{pendingCustomShelf.shelfName}&quot;</p>
-                                  {(["wil-ik-lezen", "aan-het-lezen", "gelezen"] as const).map((status) => (
-                                    <button
-                                      key={status}
-                                      type="button"
-                                      className="shared-inbox-shelf-option"
-                                      onClick={() => {
-                                        const indices = Array.from(selectedSharedBookIndices.get(itemIndex) ?? []);
-                                        const snapshots = indices.map((i) => item.books[i]);
-                                        const result = addBookSnapshotsToMyLibrary(snapshots, { status, shelfId: pendingCustomShelf.shelfId });
-                                        setSharedAddMessage(result);
-                                        clearSelectionForItem(itemIndex);
-                                        setShowShelfPickerForItem(null);
-                                        setNewShelfNameInbox("");
-                                        setPendingCustomShelf(null);
-                                        setTimeout(() => setSharedAddMessage(null), 4000);
-                                      }}
-                                    >
-                                      {STATUS_LABELS[status]}
-                                    </button>
-                                  ))}
-                                  <button type="button" className="link-button" onClick={() => setPendingCustomShelf(null)}>
-                                    Terug
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  {shelves.map((shelf) => (
-                                    <button
-                                      key={shelf.id}
-                                      type="button"
-                                      className="shared-inbox-shelf-option"
-                                      onClick={() => {
-                                        if (shelf.system) {
-                                          const indices = Array.from(selectedSharedBookIndices.get(itemIndex) ?? []);
-                                          const snapshots = indices.map((i) => item.books[i]);
-                                          const result = addBookSnapshotsToMyLibrary(snapshots, { shelfId: shelf.id });
-                                          setSharedAddMessage(result);
-                                          clearSelectionForItem(itemIndex);
-                                          setShowShelfPickerForItem(null);
-                                          setNewShelfNameInbox("");
-                                          setTimeout(() => setSharedAddMessage(null), 4000);
-                                        } else {
-                                          setPendingCustomShelf({ itemIndex, shelfId: shelf.id, shelfName: shelf.name });
-                                        }
-                                      }}
-                                    >
-                                      {shelf.name}
-                                    </button>
-                                  ))}
-                                  <div className="shared-inbox-new-shelf">
-                                    <input
-                                      type="text"
-                                      value={newShelfNameInbox}
-                                      onChange={(e) => setNewShelfNameInbox(e.target.value)}
-                                      placeholder="Nieuwe plank naam…"
-                                      className="shared-inbox-new-shelf-input"
-                                    />
-                                    <button
-                                      type="button"
-                                      className="shared-inbox-shelf-option"
-                                      disabled={!newShelfNameInbox.trim()}
-                                      onClick={() => {
-                                        const name = newShelfNameInbox.trim();
-                                        if (!name) return;
-                                        const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
-                                        persist([...shelves, newShelf]);
-                                        setPendingCustomShelf({ itemIndex, shelfId: newShelf.id, shelfName: newShelf.name });
-                                        setNewShelfNameInbox("");
-                                      }}
-                                    >
-                                      Nieuwe plank aanmaken
-                                    </button>
-                                  </div>
-                                </>
-                              )}
+                              {shelves.map((shelf) => (
+                                <button
+                                  key={shelf.id}
+                                  type="button"
+                                  className="shared-inbox-shelf-option"
+                                  onClick={() => {
+                                    const indices = Array.from(selectedSharedBookIndices.get(itemIndex) ?? []);
+                                    const snapshots = indices.map((i) => item.books[i]);
+                                    const result = shelf.system
+                                      ? addBookSnapshotsToMyLibrary(snapshots, { shelfId: shelf.id })
+                                      : addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: shelf.id });
+                                    setSharedAddMessage(result);
+                                    clearSelectionForItem(itemIndex);
+                                    setShowShelfPickerForItem(null);
+                                    setNewShelfNameInbox("");
+                                    const shelfName = shelf.name;
+                                    const msg = result.added > 0 ? (result.added === 1 ? `1 boek toegevoegd aan "${shelfName}".` : `${result.added} boeken toegevoegd aan "${shelfName}".`) + (result.skipped > 0 ? ` ${result.skipped} stond/stonden al in je lijst.` : "") : (result.skipped > 0 ? `${result.skipped} stond/stonden al in je lijst.` : "");
+                                    if (msg) setToast(msg);
+                                    setTimeout(() => { setSharedAddMessage(null); setToast(""); }, 4000);
+                                  }}
+                                >
+                                  {shelf.name}
+                                </button>
+                              ))}
+                              <div className="shared-inbox-new-shelf">
+                                <input
+                                  type="text"
+                                  value={newShelfNameInbox}
+                                  onChange={(e) => setNewShelfNameInbox(e.target.value)}
+                                  placeholder="Nieuwe plank naam…"
+                                  className="shared-inbox-new-shelf-input"
+                                />
+                                <button
+                                  type="button"
+                                  className="shared-inbox-shelf-option"
+                                  disabled={!newShelfNameInbox.trim()}
+                                  onClick={() => {
+                                    const name = newShelfNameInbox.trim();
+                                    if (!name) return;
+                                    const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
+                                    const nextShelves = [...shelves, newShelf];
+                                    persist(nextShelves);
+                                    const indices = Array.from(selectedSharedBookIndices.get(itemIndex) ?? []);
+                                    const snapshots = indices.map((i) => item.books[i]);
+                                    const result = addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: newShelf.id });
+                                    setSharedAddMessage(result);
+                                    clearSelectionForItem(itemIndex);
+                                    setShowShelfPickerForItem(null);
+                                    setNewShelfNameInbox("");
+                                    const msg = result.added > 0 ? (result.added === 1 ? `1 boek toegevoegd aan "${name}".` : `${result.added} boeken toegevoegd aan "${name}".`) + (result.skipped > 0 ? ` ${result.skipped} stond/stonden al in je lijst.` : "") : (result.skipped > 0 ? `${result.skipped} stond/stonden al in je lijst.` : "");
+                                    if (msg) setToast(msg);
+                                    setTimeout(() => { setSharedAddMessage(null); setToast(""); }, 4000);
+                                  }}
+                                >
+                                  Nieuwe plank aanmaken
+                                </button>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -794,6 +797,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
           </div>
         </div>
       )}
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }

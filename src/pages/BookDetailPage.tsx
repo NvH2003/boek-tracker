@@ -1,14 +1,15 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { loadBooks, saveBooks, subscribeBooks } from "../storage";
-import { Book, ReadStatus } from "../types";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { loadBooks, loadShelves, saveBooks, subscribeBooks } from "../storage";
+import { Book, ReadStatus, Shelf } from "../types";
 import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
 
 const STATUS_LABELS: Record<ReadStatus, string> = {
   "wil-ik-lezen": "Wil ik lezen",
   "aan-het-lezen": "Aan het lezen",
-  gelezen: "Gelezen"
+  gelezen: "Gelezen",
+  "geen-status": "Geen status"
 };
 
 export function BookDetailPage() {
@@ -42,6 +43,7 @@ export function BookDetailPage() {
   );
   const [coverUrl, setCoverUrl] = useState<string>(book?.coverUrl ?? "");
   const [description, setDescription] = useState<string>(book?.description ?? "");
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [useCustomSeries, setUseCustomSeries] = useState<boolean>(() => {
     // Als het boek al een serie heeft die niet in de bestaande series staat, gebruik custom input
     if (book?.seriesName) {
@@ -65,6 +67,15 @@ export function BookDetailPage() {
     return Array.from(seriesSet).sort();
   }, [books]);
 
+  const shelves = useMemo(() => loadShelves(), []);
+  const bookPlanks = useMemo(() => {
+    const ids = book?.shelfIds ?? [];
+    return ids
+      .map((shelfId) => shelves.find((s) => s.id === shelfId))
+      .filter((s): s is NonNullable<typeof s> => s != null)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [book?.shelfIds, shelves]);
+
   if (!book) {
     return (
       <div className="page">
@@ -85,6 +96,46 @@ export function BookDetailPage() {
     setBooks(updatedBooks);
     saveBooks(updatedBooks);
   }
+
+  function updateBook(updates: Partial<Book>) {
+    if (!book) return;
+    const updated = books.map((b) => (b.id === book.id ? { ...b, ...updates } : b));
+    persist(updated);
+    if (updates.status !== undefined) setStatus(updates.status);
+  }
+
+  function handleStatusChange(newStatus: ReadStatus) {
+    setStatus(newStatus);
+    if (!book) return;
+    const updates: Partial<Book> = { status: newStatus };
+    if (newStatus === "gelezen" && !finishedAt) {
+      const today = new Date();
+      updates.finishedAt = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      setFinishedAt(updates.finishedAt);
+    }
+    updateBook(updates);
+  }
+
+  function addBookToPlank(shelfId: string) {
+    if (!book) return;
+    const shelfIds = [...(book.shelfIds ?? []), shelfId];
+    updateBook({ shelfIds });
+  }
+
+  function removeBookFromPlank(shelfId: string) {
+    if (!book) return;
+    const shelfIds = (book.shelfIds ?? []).filter((id) => id !== shelfId);
+    updateBook({ shelfIds: shelfIds.length ? shelfIds : undefined });
+  }
+
+  const customShelves = useMemo(
+    () => shelves.filter((s: Shelf) => !s.system),
+    [shelves]
+  );
+  const shelvesToAdd = useMemo(
+    () => customShelves.filter((s) => !(book?.shelfIds ?? []).includes(s.id)),
+    [customShelves, book?.shelfIds]
+  );
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -176,27 +227,80 @@ export function BookDetailPage() {
         )}
         <div className="form-field">
           <span>Status</span>
-          <select
-            value={status}
-            onChange={(e) => {
-              const newStatus = e.target.value as ReadStatus;
-              setStatus(newStatus);
-              // Als status wordt gewijzigd naar "gelezen" en er is nog geen finishedAt datum, zet de huidige datum
-              if (newStatus === "gelezen" && !finishedAt) {
-                const today = new Date();
-                const year = today.getFullYear();
-                const month = String(today.getMonth() + 1).padStart(2, "0");
-                const day = String(today.getDate()).padStart(2, "0");
-                setFinishedAt(`${year}-${month}-${day}`);
-              }
-            }}
-          >
-            {Object.entries(STATUS_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
+          <div className="status-dropdown">
+            <button
+              type="button"
+              className={`status-select status-dropdown-trigger status-select-${status}`}
+              onClick={() => setShowStatusMenu((v) => !v)}
+            >
+              {STATUS_LABELS[status]}
+              <span className="status-dropdown-caret">▾</span>
+            </button>
+            {showStatusMenu && (
+              <div className="status-dropdown-menu">
+                {(Object.entries(STATUS_LABELS) as [ReadStatus, string][])
+                  .map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`book-detail-status-pill book-detail-status-pill-${value} ${
+                        status === value ? "selected" : ""
+                      }`}
+                      onClick={() => {
+                        handleStatusChange(value);
+                        setShowStatusMenu(false);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="form-field book-detail-planks">
+          <span>Staat op plank</span>
+          <div className="book-detail-plank-pills">
+            {bookPlanks.map((shelf) => (
+              <span key={shelf.id} className="plank-pill">
+                <Link to={withBase(basePath, `/plank/${shelf.id}`)} className="plank-pill-link">
+                  {shelf.name}
+                </Link>
+                <button
+                  type="button"
+                  className="plank-pill-remove"
+                  aria-label={`Verwijder van plank ${shelf.name}`}
+                  onClick={() => removeBookFromPlank(shelf.id)}
+                >
+                  ×
+                </button>
+              </span>
             ))}
-          </select>
+            {shelvesToAdd.length > 0 && (
+              <select
+                className="book-detail-add-plank-select"
+                value=""
+                onChange={(e) => {
+                  const shelfId = e.target.value;
+                  if (shelfId) {
+                    addBookToPlank(shelfId);
+                    e.target.value = "";
+                  }
+                }}
+                aria-label="Toevoegen aan plank"
+              >
+                <option value="">+ Toevoegen aan plank</option>
+                {shelvesToAdd.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          {bookPlanks.length === 0 && shelvesToAdd.length === 0 && (
+            <p className="book-detail-planks-hint">Geen eigen planken. Maak een plank aan via Planken.</p>
+          )}
         </div>
         <div className="form-field">
           <span>Beoordeling</span>

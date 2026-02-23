@@ -19,7 +19,8 @@ interface SearchResult {
 const STATUS_LABELS: Record<ReadStatus, string> = {
   "wil-ik-lezen": "Wil ik lezen",
   "aan-het-lezen": "Aan het lezen",
-  gelezen: "Gelezen"
+  gelezen: "Gelezen",
+  "geen-status": "Geen status"
 };
 
 /** Language filter for author books modal (Open Library 3-letter code -> label) */
@@ -64,7 +65,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialStatus = (() => {
     const param = searchParams.get("status") as ReadStatus | null;
-    if (param === "wil-ik-lezen" || param === "aan-het-lezen" || param === "gelezen") {
+    if (param === "wil-ik-lezen" || param === "aan-het-lezen" || param === "gelezen" || param === "geen-status") {
       return param;
     }
     return "alle" as const;
@@ -101,7 +102,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   const [authorSearchQuery, setAuthorSearchQuery] = useState("");
   const [selectedAuthorBookIds, setSelectedAuthorBookIds] = useState<Set<string>>(new Set());
   const [showAuthorShelfPicker, setShowAuthorShelfPicker] = useState(false);
-  const [authorPendingCustomShelfId, setAuthorPendingCustomShelfId] = useState<string | null>(null);
   const [authorNewShelfName, setAuthorNewShelfName] = useState("");
   /** Open Library 3-letter code: "" = all, "dut" = Nederlands, "eng" = English, etc. */
   const [authorLanguageFilter, setAuthorLanguageFilter] = useState<string>("");
@@ -237,6 +237,14 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     );
     return sortBooksBySeries(filtered);
   }, [books, statusFilter]);
+
+  function getBookPlankNames(book: Book): string[] {
+    const ids = book.shelfIds ?? [];
+    return ids
+      .map((id) => shelves.find((s) => s.id === id)?.name)
+      .filter((name): name is string => name != null)
+      .sort((a, b) => a.localeCompare(b));
+  }
 
   const filteredAuthorBooks = useMemo(() => {
     if (!authorLanguageFilter) return authorSearchResults;
@@ -752,7 +760,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
 
     // Nog niet in bibliotheek → nieuw boek aanmaken
     const effectiveStatus: ReadStatus =
-      statusFromShelf ?? (statusFilter === "alle" ? "wil-ik-lezen" : statusFilter);
+      statusFromShelf ?? "geen-status";
 
     const shelfIds =
       statusFromShelf != null
@@ -1098,6 +1106,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                   <option value="wil-ik-lezen">Wil ik lezen</option>
                   <option value="aan-het-lezen">Aan het lezen</option>
                   <option value="gelezen">Gelezen</option>
+                  <option value="geen-status">Geen status</option>
                 </select>
               </label>
               <button
@@ -1138,6 +1147,14 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                       )}
                       <h3>{book.title}</h3>
                       <p className="book-authors">{book.authors}</p>
+                      {getBookPlankNames(book).length > 0 && (
+                        <div className="book-planks">
+                          <span className="book-planks-label">Planken:</span>
+                          {getBookPlankNames(book).map((name) => (
+                            <span key={name} className="plank-pill plank-pill-inline">{name}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   {showDailyGoalProgress && (
@@ -1297,7 +1314,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
           onClick={() => {
             setShowAuthorBooksModal(false);
             setShowAuthorShelfPicker(false);
-            setAuthorPendingCustomShelfId(null);
             setAuthorLanguageFilter("");
           }}
         >
@@ -1311,7 +1327,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                 onClick={() => {
                   setShowAuthorBooksModal(false);
                   setShowAuthorShelfPicker(false);
-                  setAuthorPendingCustomShelfId(null);
                   setAuthorLanguageFilter("");
                 }}
               >
@@ -1385,93 +1400,64 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                   </button>
                   {showAuthorShelfPicker && (
                     <div className="author-shelf-picker">
-                      {authorPendingCustomShelfId ? (
-                        <div className="custom-shelf-status-picker">
-                          <p className="custom-shelf-status-label">Kies status voor deze plank</p>
-                          {(["wil-ik-lezen", "aan-het-lezen", "gelezen"] as const).map((status) => (
-                            <button
-                              key={status}
-                              type="button"
-                              className="add-to-shelf-item"
-                              onClick={() => {
-                                const snapshots = authorSearchResults
-                                  .filter((b) => selectedAuthorBookIds.has(b.id))
-                                  .map((b) => ({ title: b.title, authors: b.authors, coverUrl: b.coverUrl }));
-                                const result = addBookSnapshotsToMyLibrary(snapshots, {
-                                  status,
-                                  shelfId: authorPendingCustomShelfId!
-                                });
-                                setToast(`${result.added} toegevoegd, ${result.skipped} stond/stonden al in je lijst.`);
-                                window.setTimeout(() => setToast(""), 3000);
-                                setShowAuthorBooksModal(false);
-                                setShowAuthorShelfPicker(false);
-                                setAuthorPendingCustomShelfId(null);
-                                setAuthorLanguageFilter("");
-                                setSelectedAuthorBookIds(new Set());
-                              }}
-                            >
-                              {STATUS_LABELS[status]}
-                            </button>
-                          ))}
-                          <button type="button" className="link-button" onClick={() => setAuthorPendingCustomShelfId(null)}>
-                            Terug
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          {shelves.map((shelf) => (
-                            <button
-                              key={shelf.id}
-                              type="button"
-                              className="add-to-shelf-item"
-                              onClick={() => {
-                                if (shelf.system) {
-                                  const snapshots = authorSearchResults
-                                    .filter((b) => selectedAuthorBookIds.has(b.id))
-                                    .map((b) => ({ title: b.title, authors: b.authors, coverUrl: b.coverUrl }));
-                                  const result = addBookSnapshotsToMyLibrary(snapshots, { shelfId: shelf.id });
-                                  setToast(`${result.added} toegevoegd, ${result.skipped} stond/stonden al in je lijst.`);
-                                  window.setTimeout(() => setToast(""), 3000);
-                                  setShowAuthorBooksModal(false);
-                                  setShowAuthorShelfPicker(false);
-                                  setAuthorLanguageFilter("");
-                                  setSelectedAuthorBookIds(new Set());
-                                } else {
-                                  setAuthorPendingCustomShelfId(shelf.id);
-                                }
-                              }}
-                            >
-                              {shelf.name}
-                            </button>
-                          ))}
-                          <div className="add-to-shelf-new">
-                            <input
-                              type="text"
-                              value={authorNewShelfName}
-                              onChange={(e) => setAuthorNewShelfName(e.target.value)}
-                              placeholder="Nieuwe plank naam…"
-                              className="add-to-shelf-new-input"
-                            />
-                            <button
-                              type="button"
-                              className="add-to-shelf-item add-to-shelf-new-btn"
-                              disabled={!authorNewShelfName.trim()}
-                              onClick={() => {
-                                const name = authorNewShelfName.trim();
-                                if (!name) return;
-                                const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
-                                const next = [...shelves, newShelf];
-                                saveShelves(next);
-                                setShelves(next);
-                                setAuthorPendingCustomShelfId(newShelf.id);
-                                setAuthorNewShelfName("");
-                              }}
-                            >
-                              Nieuwe plank aanmaken
-                            </button>
-                          </div>
-                        </>
-                      )}
+                      {shelves.map((shelf) => (
+                        <button
+                          key={shelf.id}
+                          type="button"
+                          className="add-to-shelf-item"
+                          onClick={() => {
+                            const snapshots = authorSearchResults
+                              .filter((b) => selectedAuthorBookIds.has(b.id))
+                              .map((b) => ({ title: b.title, authors: b.authors, coverUrl: b.coverUrl }));
+                            const result = shelf.system
+                              ? addBookSnapshotsToMyLibrary(snapshots, { shelfId: shelf.id })
+                              : addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: shelf.id });
+                            setToast(`${result.added} toegevoegd, ${result.skipped} stond/stonden al in je lijst.`);
+                            window.setTimeout(() => setToast(""), 3000);
+                            setShowAuthorBooksModal(false);
+                            setShowAuthorShelfPicker(false);
+                            setAuthorLanguageFilter("");
+                            setSelectedAuthorBookIds(new Set());
+                          }}
+                        >
+                          {shelf.name}
+                        </button>
+                      ))}
+                      <div className="add-to-shelf-new">
+                        <input
+                          type="text"
+                          value={authorNewShelfName}
+                          onChange={(e) => setAuthorNewShelfName(e.target.value)}
+                          placeholder="Nieuwe plank naam…"
+                          className="add-to-shelf-new-input"
+                        />
+                        <button
+                          type="button"
+                          className="add-to-shelf-item add-to-shelf-new-btn"
+                          disabled={!authorNewShelfName.trim()}
+                          onClick={() => {
+                            const name = authorNewShelfName.trim();
+                            if (!name) return;
+                            const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
+                            const next = [...shelves, newShelf];
+                            saveShelves(next);
+                            setShelves(next);
+                            const snapshots = authorSearchResults
+                              .filter((b) => selectedAuthorBookIds.has(b.id))
+                              .map((b) => ({ title: b.title, authors: b.authors, coverUrl: b.coverUrl }));
+                            const result = addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: newShelf.id });
+                            setToast(`${result.added} toegevoegd, ${result.skipped} stond/stonden al in je lijst.`);
+                            window.setTimeout(() => setToast(""), 3000);
+                            setShowAuthorBooksModal(false);
+                            setShowAuthorShelfPicker(false);
+                            setAuthorNewShelfName("");
+                            setAuthorLanguageFilter("");
+                            setSelectedAuthorBookIds(new Set());
+                          }}
+                        >
+                          Nieuwe plank aanmaken
+                        </button>
+                      </div>
                     </div>
                   )}
                 </>
@@ -1482,7 +1468,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                 onClick={() => {
                   setShowAuthorBooksModal(false);
                   setShowAuthorShelfPicker(false);
-                  setAuthorPendingCustomShelfId(null);
                   setAuthorLanguageFilter("");
                 }}
               >
