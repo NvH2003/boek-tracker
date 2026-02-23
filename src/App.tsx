@@ -14,6 +14,14 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { BuddyReadingListPage } from "./pages/BuddyReadingListPage";
 import { getBasePathFromPathname, withBase } from "./routing";
 
+/** Redirect root-level routes naar mobiele view, zodat de webapp altijd dezelfde UI toont als de app. */
+function RedirectToMobile() {
+  const location = useLocation();
+  const path = location.pathname;
+  const to = path === "/dashboard" || path === "/dashboard/web" ? "/mobile/boeken" : "/mobile" + path;
+  return <Navigate to={to} replace />;
+}
+
 export function App() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -118,75 +126,70 @@ export function App() {
       )}
       <main className="app-main">
         <Routes>
+          {/* Web app en mobiele app: standaard dezelfde mobiele UI. Desktop-layout alleen via /web/* */}
           <Route
             path="/"
             element={
               <Navigate
-                to={
-                  isLoggedIn
-                    ? typeof (window as { Capacitor?: unknown }).Capacitor !== "undefined"
-                      ? "/mobile/boeken"
-                      : "/dashboard"
-                    : "/login"
-                }
+                to={isLoggedIn ? "/mobile/boeken" : "/mobile/login"}
                 replace
               />
             }
           />
-          <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
-          <Route path="/register" element={<RegisterPage onLogin={handleLogin} />} />
+          <Route path="/login" element={<RedirectToMobile />} />
+          <Route path="/register" element={<RedirectToMobile />} />
           <Route
             path="/dashboard"
             element={
-              isLoggedIn ? <DashboardPage mode="toggle" /> : <Navigate to="/login" replace />
+              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
             }
           />
           <Route
             path="/dashboard/web"
             element={
-              isLoggedIn ? <DashboardPage mode="desktop" /> : <Navigate to="/login" replace />
+              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
             }
           />
           <Route
             path="/boeken"
             element={
-              isLoggedIn ? <BooksPage /> : <Navigate to="/login" replace />
+              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
             }
           />
           <Route
             path="/boek/:id"
             element={
-              isLoggedIn ? <BookDetailPage /> : <Navigate to="/login" replace />
+              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
             }
           />
           <Route
             path="/planken"
             element={
-              isLoggedIn ? <ShelvesPage /> : <Navigate to="/login" replace />
+              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
             }
           />
           <Route
             path="/plank/:shelfId"
             element={
-              isLoggedIn ? <ShelfViewPage /> : <Navigate to="/login" replace />
+              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
             }
           />
           <Route
             path="/boekbuddy/:username"
             element={
-              isLoggedIn ? <BuddyReadingListPage /> : <Navigate to="/login" replace />
+              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
             }
           />
           <Route
             path="/challenge"
             element={
-              isLoggedIn ? <ChallengePage /> : <Navigate to="/login" replace />
+              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
             }
           />
           <Route
             path="/profiel"
             element={
-              isLoggedIn ? <ProfilePage onLogout={handleLogout} /> : <Navigate to="/login" replace />
+              isLoggedIn ? <RedirectToMobile /> : <Navigate to="/mobile/login" replace />
             }
           />
 
