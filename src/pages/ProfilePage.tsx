@@ -8,6 +8,7 @@ const STATUS_LABELS: Record<ReadStatus, string> = {
   gelezen: "Gelezen"
 };
 import { useBasePath, withBase } from "../routing";
+import { useZoom } from "../ZoomContext";
 import {
   loadShelves,
   saveShelves,
@@ -267,6 +268,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
   }
 
   const displayInitial = (name || username || "?").charAt(0).toUpperCase();
+  const { zoomEnabled, setZoomEnabled } = useZoom();
 
   return (
     <div className="page profile-page">
@@ -298,18 +300,18 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
         <button type="button" className="profile-hero-btn profile-hero-btn-logout" onClick={onLogout}>
           Uitloggen
         </button>
-        <button
-          type="button"
-          className="link-button"
-          onClick={() => {
-            const w = window as any;
-            if (typeof w.btEnableZoom === "function") {
-              w.btEnableZoom();
-            }
-          }}
-        >
-          Inzoomen toestaan
-        </button>
+        <div className="profile-zoom-toggle">
+          <span className="profile-zoom-label" aria-live="polite">
+            {zoomEnabled ? "Inzoomen staat aan (pinch om te zoomen)" : "Inzoomen staat uit"}
+          </span>
+          <button
+            type="button"
+            className={zoomEnabled ? "secondary-button profile-zoom-btn" : "link-button profile-zoom-btn"}
+            onClick={() => setZoomEnabled(!zoomEnabled)}
+          >
+            {zoomEnabled ? "Inzoomen uitzetten" : "Inzoomen aanzetten"}
+          </button>
+        </div>
       </div>
 
       {showAccountModal && (

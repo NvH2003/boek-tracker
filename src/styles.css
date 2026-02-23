@@ -857,6 +857,23 @@ select {
   border-color: rgba(248, 113, 113, 0.4);
 }
 
+.profile-zoom-toggle {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.profile-zoom-label {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+.profile-zoom-btn {
+  align-self: flex-start;
+  font-size: 0.9rem;
+}
+
 .profile-account-modal {
   max-height: 85vh;
   overflow-y: auto;
