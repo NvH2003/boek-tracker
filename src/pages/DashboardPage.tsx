@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { loadBooks, loadShelves, saveShelves, loadChallenge, saveChallenge, saveBooks, subscribeBooks, loadFriends, shareWithFriend } from "../storage";
 import { Book, Shelf, ReadStatus, ReadingChallenge } from "../types";
 import { useBasePath, withBase } from "../routing";
+import { BookDetailPage } from "./BookDetailPage";
 
 function formatDate(date: Date): string {
   const year = date.getFullYear();
@@ -111,7 +112,7 @@ function sortBooksBySeries(books: Book[]): Book[] {
 }
 
 function getBooksForShelf(shelf: Shelf, books: Book[]): Book[] {
-  // Voor standaardplanken: match op status
+  // Voor standaardboekenkasten: match op status
   const statusMap: Record<string, ReadStatus> = {
     "wil-ik-lezen": "wil-ik-lezen",
     "aan-het-lezen": "aan-het-lezen",
@@ -124,7 +125,7 @@ function getBooksForShelf(shelf: Shelf, books: Book[]): Book[] {
     return sortBooksBySeries(filtered);
   }
   
-  // Voor custom planken: filter op shelfIds
+  // Voor custom boekenkasten: filter op shelfIds
   return books
     .filter((b) => b.shelfIds?.includes(shelf.id))
     .sort((a, b) => a.title.localeCompare(b.title));
@@ -162,6 +163,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
   const [showShareWithBuddyModal, setShowShareWithBuddyModal] = useState(false);
   const [shareWithBuddyError, setShareWithBuddyError] = useState("");
   const [showDeleteSelectedModal, setShowDeleteSelectedModal] = useState(false);
+  const [detailModalBookId, setDetailModalBookId] = useState<string | null>(null);
   const [newShelfName, setNewShelfName] = useState("");
   const [showModalStatusMenu, setShowModalStatusMenu] = useState(false);
   const [selectionBarPosition, setSelectionBarPosition] = useState({ bottom: 96, leftPercent: 50 });
@@ -256,6 +258,10 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
     setUseCustomSeries(!!(book.seriesName && !existingSeries.includes(book.seriesName)));
   }
 
+  function openDetailPopup(bookId: string) {
+    setDetailModalBookId(bookId);
+  }
+
   function removeBook(bookId: string) {
     const next = books.filter((b) => b.id !== bookId);
     updateBooks(next);
@@ -319,7 +325,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
     updateBooks(next);
     setSelectedBookIds(new Set());
     setShowAddToShelfModal(false);
-    const shelfName = status ? STATUS_LABELS[status] : (shelves.find((s) => s.id === shelfId)?.name ?? "plank");
+    const shelfName = status ? STATUS_LABELS[status] : (shelves.find((s) => s.id === shelfId)?.name ?? "boekenkast");
     setToast(ids.length === 1 ? `Boek toegevoegd aan "${shelfName}".` : `${ids.length} boeken toegevoegd aan "${shelfName}".`);
     window.setTimeout(() => setToast(""), 2500);
   }
@@ -810,7 +816,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
 
       {dashboardView === "desktop" && (
         <section className="card">
-          <h2>Mijn planken</h2>
+          <h2>Mijn boekenkasten</h2>
           <div className="shelves-grid">
             {shelves
             .sort((a, b) => {
@@ -842,7 +848,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                     <span className="book-count">({shelfBooks.length})</span>
                   </h3>
                   {shelfBooks.length === 0 ? (
-                    <p className="empty-shelf">Geen boeken op deze plank</p>
+                    <p className="empty-shelf">Geen boeken op deze boekenkast</p>
                   ) : (
                     <div className={isCurrentlyReading ? "shelf-books-list-with-descriptions" : "shelf-books-grid"}>
                       {shelfBooks.slice(0, isCurrentlyReading ? 3 : 6).map((book) => {
@@ -1072,31 +1078,57 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                           <div className="mobile-reading-author">{book.authors}</div>
                           {getBookPlankNames(book).length > 0 && (
                             <div className="mobile-reading-planks">
-                              <span className="mobile-reading-planks-label">Planken:</span>
+                              <span className="mobile-reading-planks-label">Boekenkasten:</span>
                               {getBookPlankNames(book).map((name) => (
                                 <span key={name} className="plank-pill plank-pill-inline">{name}</span>
                               ))}
                             </div>
                           )}
                           {!showDailyGoalProgress && (
-                            <div className="mobile-reading-pages">
-                              {book.pageCount != null
-                                ? `${book.pageCount} blz`
-                                : "Vul zelf het aantal pagina's in"}
-                            </div>
+                            <>
+                              <div className="mobile-reading-pages">
+                                {book.pageCount != null
+                                  ? `${book.pageCount} blz`
+                                  : "Vul zelf het aantal pagina's in"}
+                              </div>
+                              <button
+                                type="button"
+                                className="mobile-reading-details"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openDetailPopup(book.id);
+                                }}
+                              >
+                                Details
+                              </button>
+                            </>
                           )}
                           {showDailyGoalProgress && (
-                            <div className="mobile-reading-challenge-progress">
-                              <div className="mobile-reading-progress-bar-wrap">
-                                <div
-                                  className="mobile-reading-progress-bar-fill"
-                                  style={{ width: `${Math.min(100, (progress!.current / progress!.total) * 100)}%` }}
-                                />
+                            <>
+                              <div className="mobile-reading-challenge-progress">
+                                <div className="mobile-reading-progress-bar-wrap">
+                                  <div
+                                    className="mobile-reading-progress-bar-fill"
+                                    style={{ width: `${Math.min(100, (progress!.current / progress!.total) * 100)}%` }}
+                                  />
+                                </div>
+                                <div className="mobile-reading-progress-pages">
+                                  Bladzijde <strong>{progress!.current}</strong> van {progress!.total}
+                                </div>
                               </div>
-                              <div className="mobile-reading-progress-pages">
-                                Bladzijde <strong>{progress!.current}</strong> van {progress!.total}
-                              </div>
-                            </div>
+                              <button
+                                type="button"
+                                className="mobile-reading-details"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openDetailPopup(book.id);
+                                }}
+                              >
+                                Details
+                              </button>
+                            </>
                           )}
                         </div>
                       </button>
@@ -1254,7 +1286,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                           <div className="mobile-reading-author">{book.authors}</div>
                           {getBookPlankNames(book).length > 0 && (
                             <div className="mobile-reading-planks">
-                              <span className="mobile-reading-planks-label">Planken:</span>
+                              <span className="mobile-reading-planks-label">Boekenkasten:</span>
                               {getBookPlankNames(book).map((name) => (
                                 <span key={name} className="plank-pill plank-pill-inline">{name}</span>
                               ))}
@@ -1265,6 +1297,17 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                               ? `${book.pageCount} blz`
                               : "Vul zelf het aantal pagina's in"}
                           </div>
+                          <button
+                            type="button"
+                            className="mobile-reading-details"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openDetailPopup(book.id);
+                            }}
+                          >
+                            Details
+                          </button>
                         </div>
                       </button>
                     </div>
@@ -1452,7 +1495,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                         <div className="mobile-reading-author">{book.authors}</div>
                         {getBookPlankNames(book).length > 0 && (
                           <div className="mobile-reading-planks">
-                            <span className="mobile-reading-planks-label">Planken:</span>
+                            <span className="mobile-reading-planks-label">Boekenkasten:</span>
                             {getBookPlankNames(book).map((name) => (
                               <span key={name} className="plank-pill plank-pill-inline">{name}</span>
                             ))}
@@ -1507,7 +1550,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
             disabled={selectedBookIds.size === 0}
             onClick={() => setShowAddToShelfModal(true)}
           >
-            Toevoegen aan plank
+            Toevoegen aan boekenkast
           </button>
           <button
             type="button"
@@ -1579,9 +1622,9 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
             className="modal modal-add-to-shelf"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3>Toevoegen aan plank</h3>
+            <h3>Toevoegen aan boekenkast</h3>
             <p className="modal-intro">
-              Kies een plank voor {selectedBookIds.size} boek{selectedBookIds.size === 1 ? "" : "en"}. De huidige status van elk boek blijft behouden.
+              Kies een boekenkast voor {selectedBookIds.size} boek{selectedBookIds.size === 1 ? "" : "en"}. De huidige status van elk boek blijft behouden.
             </p>
             <ul className="add-to-shelf-list">
               {shelves.map((shelf) => (
@@ -1601,7 +1644,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                 type="text"
                 value={newShelfName}
                 onChange={(e) => setNewShelfName(e.target.value)}
-                placeholder="Nieuwe plank naam…"
+                placeholder="Nieuwe boekenkast naam…"
                 className="add-to-shelf-new-input"
               />
               <button
@@ -1619,7 +1662,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                   setNewShelfName("");
                 }}
               >
-                Nieuwe plank aanmaken
+                Nieuwe boekenkast aanmaken
               </button>
             </div>
             <button
@@ -1689,6 +1732,23 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
         </div>
       )}
 
+      {dashboardView === "mobile" && detailModalBookId && (
+        <div
+          className="book-detail-popup-overlay"
+          onClick={() => setDetailModalBookId(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Boekdetails"
+        >
+          <div className="book-detail-popup-inner" onClick={(e) => e.stopPropagation()}>
+            <BookDetailPage
+              modalBookId={detailModalBookId}
+              onClose={() => setDetailModalBookId(null)}
+            />
+          </div>
+        </div>
+      )}
+
       {dashboardView === "mobile" && selectedBook && (
         <div className="modal-backdrop" onClick={() => setSelectedBook(null)}>
           <div
@@ -1736,7 +1796,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
             </div>
             {getBookPlankNames(selectedBook).length > 0 && (
               <div className="modal-book-planks-row">
-                <span className="modal-book-status-label">Plank:</span>
+                <span className="modal-book-status-label">Boekenkast:</span>
                 <div className="modal-book-plank-pills">
                   {getBookPlankNames(selectedBook).map((name) => (
                     <span key={name} className="plank-pill plank-pill-inline">{name}</span>

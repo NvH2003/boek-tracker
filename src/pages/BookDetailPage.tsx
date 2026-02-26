@@ -12,11 +12,20 @@ const STATUS_LABELS: Record<ReadStatus, string> = {
   "geen-status": "Geen status"
 };
 
-export function BookDetailPage() {
-  const { id } = useParams<{ id: string }>();
+export interface BookDetailPageProps {
+  /** In modus pop-up: boek-id en callback om te sluiten */
+  modalBookId?: string;
+  onClose?: () => void;
+}
+
+export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {}) {
+  const { id: routeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const basePath = useBasePath();
   const [books, setBooks] = useState<Book[]>(() => loadBooks());
+
+  const id = modalBookId ?? routeId;
+  const isModal = Boolean(modalBookId && onClose);
 
   // Sync books tussen tabs/shells (web ↔ mobile)
   useEffect(() => {
@@ -84,7 +93,7 @@ export function BookDetailPage() {
         <button
           type="button"
           className="secondary-button"
-          onClick={() => navigate(withBase(basePath, "/boeken"))}
+          onClick={() => (isModal ? onClose?.() : navigate(withBase(basePath, "/boeken")))}
         >
           Terug naar overzicht
         </button>
@@ -165,7 +174,8 @@ export function BookDetailPage() {
         : b
     );
     persist(updatedBooks);
-    navigate(withBase(basePath, "/boeken"));
+    if (isModal) onClose?.();
+    else navigate(withBase(basePath, "/boeken"));
   }
 
   function handleSeriesSelect(value: string) {
@@ -179,13 +189,33 @@ export function BookDetailPage() {
   }
 
   return (
-    <div className="page">
-      <h1>Boek aanpassen</h1>
-      {book.description && (
-        <section className="card book-description-card">
-          <h2>Samenvatting</h2>
-          <p className="book-description-text">{book.description}</p>
-        </section>
+    <div className={`page ${isModal ? "book-detail-modal-content" : ""}`}>
+      {isModal && (
+        <div className="book-detail-modal-header">
+          <button
+            type="button"
+            className="book-detail-modal-close"
+            onClick={onClose}
+            aria-label="Sluiten"
+          >
+            ✕
+          </button>
+          <h1 className="book-detail-modal-title">Boek aanpassen</h1>
+        </div>
+      )}
+      {!isModal && <h1>Boek aanpassen</h1>}
+
+      {bookPlanks.length > 0 && (
+        <div className="book-detail-shelves-summary">
+          <span className="book-detail-shelves-label">Boekenkasten:</span>
+          <div className="book-detail-shelves-pills">
+            {bookPlanks.map((shelf) => (
+              <span key={shelf.id} className="plank-pill plank-pill-inline">
+                {shelf.name}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
       <form onSubmit={handleSubmit} className="card form-card book-detail-form">
         <div className="form-field">
@@ -258,60 +288,14 @@ export function BookDetailPage() {
             )}
           </div>
         </div>
-        <div className="form-field book-detail-planks">
-          <span>Staat op plank</span>
-          <div className="book-detail-plank-pills">
-            {bookPlanks.map((shelf) => (
-              <span key={shelf.id} className="plank-pill">
-                <Link to={withBase(basePath, `/plank/${shelf.id}`)} className="plank-pill-link">
-                  {shelf.name}
-                </Link>
-                <button
-                  type="button"
-                  className="plank-pill-remove"
-                  aria-label={`Verwijder van plank ${shelf.name}`}
-                  onClick={() => removeBookFromPlank(shelf.id)}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            {shelvesToAdd.length > 0 && (
-              <select
-                className="book-detail-add-plank-select"
-                value=""
-                onChange={(e) => {
-                  const shelfId = e.target.value;
-                  if (shelfId) {
-                    addBookToPlank(shelfId);
-                    e.target.value = "";
-                  }
-                }}
-                aria-label="Toevoegen aan plank"
-              >
-                <option value="">+ Toevoegen aan plank</option>
-                {shelvesToAdd.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-          {bookPlanks.length === 0 && shelvesToAdd.length === 0 && (
-            <p className="book-detail-planks-hint">Geen eigen planken. Maak een plank aan via Planken.</p>
-          )}
-        </div>
         <div className="form-field">
-          <span>Beoordeling</span>
-          <RatingStars value={rating} onChange={setRating} />
-        </div>
-        <div className="form-field">
-          <span>Uitgelezen op</span>
+          <span>Aantal pagina's (optioneel)</span>
           <input
-            type="date"
-            value={finishedAt}
-            onChange={(e) => setFinishedAt(e.target.value)}
+            type="number"
+            min="1"
+            value={pageCount}
+            onChange={(e) => setPageCount(e.target.value)}
+            placeholder="Bijv. 467"
           />
         </div>
         <div className="form-field">
@@ -371,18 +355,79 @@ export function BookDetailPage() {
             min="1"
           />
         </div>
+        <div className="form-field book-detail-planks">
+          <span>Staat op boekenkast</span>
+          <div className="book-detail-plank-pills">
+            {bookPlanks.map((shelf) => (
+              <span key={shelf.id} className="plank-pill">
+                <Link to={withBase(basePath, `/plank/${shelf.id}`)} className="plank-pill-link">
+                  {shelf.name}
+                </Link>
+                <button
+                  type="button"
+                  className="plank-pill-remove"
+                  aria-label={`Verwijder van boekenkast ${shelf.name}`}
+                  onClick={() => removeBookFromPlank(shelf.id)}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {shelvesToAdd.length > 0 && (
+              <select
+                className="book-detail-add-plank-select"
+                value=""
+                onChange={(e) => {
+                  const shelfId = e.target.value;
+                  if (shelfId) {
+                    addBookToPlank(shelfId);
+                    e.target.value = "";
+                  }
+                }}
+                aria-label="Toevoegen aan boekenkast"
+              >
+                <option value="">+ Toevoegen aan boekenkast</option>
+                {shelvesToAdd.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          {bookPlanks.length === 0 && shelvesToAdd.length === 0 && (
+            <p className="book-detail-planks-hint">Geen eigen boekenkasten. Maak een boekenkast aan via Boekenkasten.</p>
+          )}
+        </div>
         <div className="form-field">
-          <span>Aantal pagina's (optioneel)</span>
+          <span>Uitgelezen op</span>
           <input
-            type="number"
-            min="1"
-            value={pageCount}
-            onChange={(e) => setPageCount(e.target.value)}
-            placeholder="Bijv. 467"
+            type="date"
+            value={finishedAt}
+            onChange={(e) => setFinishedAt(e.target.value)}
           />
         </div>
         <div className="form-field">
+          <span>Beoordeling</span>
+          <RatingStars value={rating} onChange={setRating} />
+        </div>
+        <div className="form-field">
           <span>Samenvatting (optioneel)</span>
+          {description && (
+            <div className="book-detail-summary-preview">
+              <p className="book-detail-summary-text">{description}</p>
+              <button
+                type="button"
+                className="book-detail-summary-toggle"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.parentElement?.classList.toggle("expanded");
+                }}
+              >
+                Alles lezen
+              </button>
+            </div>
+          )}
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -407,7 +452,7 @@ export function BookDetailPage() {
           <button
             type="button"
             className="secondary-button"
-            onClick={() => navigate(-1)}
+            onClick={() => (isModal ? onClose?.() : navigate(-1))}
           >
             Annuleren
           </button>

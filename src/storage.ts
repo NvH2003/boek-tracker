@@ -8,6 +8,7 @@ const CHALLENGE_KEY = "bt_challenge_v1";
 const FRIEND_REQUESTS_KEY = "bt_friend_requests_v1";
 const FRIENDS_KEY = "bt_friends_v1";
 const SHARED_INBOX_KEY = "bt_shared_inbox_v1";
+const SHELF_VIEW_SETTINGS_KEY = "bt_shelf_view_settings_v1";
 
 function booksKey(): string {
   const u = getCurrentUsername();
@@ -33,6 +34,43 @@ function friendsKey(username: string): string {
 function sharedInboxKey(username: string): string {
   return `${SHARED_INBOX_KEY}_${username}`;
 }
+function shelfViewSettingsKey(): string {
+  const u = getCurrentUsername();
+  return u ? `${SHELF_VIEW_SETTINGS_KEY}_${u}` : SHELF_VIEW_SETTINGS_KEY;
+}
+
+/** Sortering en groepering per boekenkast, gekoppeld aan account. */
+export interface ShelfViewSettings {
+  sortRulesByShelf: Record<string, string[]>;
+  groupModeByShelf: Record<string, string>;
+  groupSortRules: Record<string, string[]>;
+}
+
+export function loadShelfViewSettings(): ShelfViewSettings {
+  try {
+    const raw = window.localStorage.getItem(shelfViewSettingsKey());
+    if (!raw) return { sortRulesByShelf: {}, groupModeByShelf: {}, groupSortRules: {} };
+    const parsed = JSON.parse(raw) as ShelfViewSettings;
+    return {
+      sortRulesByShelf: parsed.sortRulesByShelf ?? {},
+      groupModeByShelf: parsed.groupModeByShelf ?? {},
+      groupSortRules: parsed.groupSortRules ?? {}
+    };
+  } catch {
+    return { sortRulesByShelf: {}, groupModeByShelf: {}, groupSortRules: {} };
+  }
+}
+
+export function saveShelfViewSettings(settings: ShelfViewSettings): void {
+  window.localStorage.setItem(shelfViewSettingsKey(), JSON.stringify(settings));
+  if (!isSupabaseConfigured() || !supabase) return;
+  const userId = getCurrentUserId();
+  if (!userId) return;
+  supabase
+    .from("user_data")
+    .upsert({ user_id: userId, key: "shelf_view_settings", value: settings }, { onConflict: "user_id,key" })
+    .then(() => {});
+}
 
 /** Sync alle data van Supabase naar localStorage (na login / session restore). */
 export async function syncFromSupabase(): Promise<void> {
@@ -50,6 +88,14 @@ export async function syncFromSupabase(): Promise<void> {
     if (byKey.shelves != null) window.localStorage.setItem(shelvesKey(), JSON.stringify(byKey.shelves));
     if (byKey.challenge != null) window.localStorage.setItem(challengeKey(), JSON.stringify(byKey.challenge));
     if (byKey.friends != null) window.localStorage.setItem(friendsKey(username), JSON.stringify(byKey.friends));
+    if (byKey.shelf_view_settings != null) {
+      const settings = byKey.shelf_view_settings as ShelfViewSettings;
+      window.localStorage.setItem(shelfViewSettingsKey(), JSON.stringify({
+        sortRulesByShelf: settings.sortRulesByShelf ?? {},
+        groupModeByShelf: settings.groupModeByShelf ?? {},
+        groupSortRules: settings.groupSortRules ?? {}
+      }));
+    }
   }
 
   const { data: reqRows } = await supabase.from("friend_requests").select("from_username, to_username, status");
@@ -82,6 +128,7 @@ export async function pushLocalToSupabase(): Promise<void> {
   const challenge = loadChallenge();
   const friends = loadFriends();
   const inbox = loadSharedInbox();
+  const shelfViewSettings = loadShelfViewSettings();
 
   await Promise.all([
     supabase.from("user_data").upsert({ user_id: userId, key: "books", value: books }, { onConflict: "user_id,key" }),
@@ -90,6 +137,7 @@ export async function pushLocalToSupabase(): Promise<void> {
       ? supabase.from("user_data").upsert({ user_id: userId, key: "challenge", value: challenge }, { onConflict: "user_id,key" })
       : Promise.resolve(),
     supabase.from("user_data").upsert({ user_id: userId, key: "friends", value: friends }, { onConflict: "user_id,key" }),
+    supabase.from("user_data").upsert({ user_id: userId, key: "shelf_view_settings", value: shelfViewSettings }, { onConflict: "user_id,key" }),
     supabase.from("shared_inbox").upsert({ user_id: userId, items: inbox }, { onConflict: "user_id" })
   ]);
 }

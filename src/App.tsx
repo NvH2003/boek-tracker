@@ -271,7 +271,7 @@ export function App() {
         </Routes>
       </main>
 
-      {isMobileShell && isLoggedIn && (
+      {isMobileShell && isLoggedIn && !location.pathname.startsWith("/boek/") && (
         <nav className="mobile-tabbar" aria-label="Mobiele navigatie">
           <Link
             to="/boeken"

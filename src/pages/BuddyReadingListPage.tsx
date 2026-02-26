@@ -188,7 +188,7 @@ export function BuddyReadingListPage() {
     setSelectedBookIds(new Set());
     setShowShelfPicker(false);
     setSelectionMode(false);
-    const shelfName = SYSTEM_SHELF_IDS.includes(shelfId) ? STATUS_LABELS[shelfId as ReadStatus] : (shelves.find((s) => s.id === shelfId)?.name ?? "plank");
+    const shelfName = SYSTEM_SHELF_IDS.includes(shelfId) ? STATUS_LABELS[shelfId as ReadStatus] : (shelves.find((s) => s.id === shelfId)?.name ?? "boekenkast");
     const msg = result.added > 0
       ? (result.added === 1 ? `1 boek toegevoegd aan "${shelfName}".` : `${result.added} boeken toegevoegd aan "${shelfName}".`)
         + (result.skipped > 0 ? ` ${result.skipped} stond/stonden al in je lijst.` : "")
@@ -573,11 +573,11 @@ export function BuddyReadingListPage() {
               disabled={selectedBookIds.size === 0}
               onClick={() => setShowShelfPicker(true)}
             >
-              Toevoegen aan plank
+              Toevoegen aan boekenkast
             </button>
             {showShelfPicker && (
               <div className="buddy-shelf-picker">
-                <p className="buddy-shelf-picker-title">Kies een plank</p>
+                <p className="buddy-shelf-picker-title">Kies een boekenkast</p>
                 {shelves.map((shelf) => (
                   <button
                     key={shelf.id}
@@ -593,7 +593,7 @@ export function BuddyReadingListPage() {
                     type="text"
                     value={newShelfName}
                     onChange={(e) => setNewShelfName(e.target.value)}
-                    placeholder="Nieuwe plank naam…"
+                    placeholder="Nieuwe boekenkast naam…"
                     className="buddy-new-shelf-input"
                   />
                   <button
@@ -611,7 +611,7 @@ export function BuddyReadingListPage() {
                       setNewShelfName("");
                     }}
                   >
-                    Nieuwe plank aanmaken
+                    Nieuwe boekenkast aanmaken
                   </button>
                 </div>
                 <button type="button" className="link-button" onClick={() => { setShowShelfPicker(false); setNewShelfName(""); }}>

@@ -1,15 +1,23 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Shelf } from "../types";
-import { loadShelves, saveShelves } from "../storage";
+import { Book, Shelf } from "../types";
+import { loadBooks, loadShelves, saveShelves, subscribeBooks } from "../storage";
 import { useBasePath, withBase } from "../routing";
+
+type ShelfSortMode = "name" | "booksDesc" | "booksAsc";
 
 export function ShelvesPage() {
   const basePath = useBasePath();
   const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
+  const [books, setBooks] = useState<Book[]>(() => loadBooks());
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [sortMode, setSortMode] = useState<ShelfSortMode>("name");
+
+  useEffect(() => {
+    return subscribeBooks(setBooks);
+  }, []);
 
   function persist(newShelves: Shelf[]) {
     setShelves(newShelves);
@@ -54,13 +62,53 @@ export function ShelvesPage() {
     persist(shelves.filter((s) => s.id !== id));
   }
 
+  const shelvesWithCounts = useMemo(() => {
+    const countsById = new Map<string, number>();
+    books.forEach((b) => {
+      const statusMap: Record<string, string> = {
+        "wil-ik-lezen": "wil-ik-lezen",
+        "aan-het-lezen": "aan-het-lezen",
+        "gelezen": "gelezen"
+      };
+      // Status-planken tellen op basis van status
+      const statusId = Object.keys(statusMap).find((id) => statusMap[id] === b.status);
+      if (statusId) {
+        countsById.set(statusId, (countsById.get(statusId) ?? 0) + 1);
+      }
+      // Custom planken tellen op basis van shelfIds
+      (b.shelfIds ?? []).forEach((id) => {
+        countsById.set(id, (countsById.get(id) ?? 0) + 1);
+      });
+    });
+    return shelves.map((s) => ({
+      shelf: s,
+      count: countsById.get(s.id) ?? 0
+    }));
+  }, [shelves, books]);
+
+  const sortedShelves = useMemo(() => {
+    return [...shelvesWithCounts].sort((a, b) => {
+      // Standaard-planken altijd eerst
+      const aSystem = a.shelf.system ? 0 : 1;
+      const bSystem = b.shelf.system ? 0 : 1;
+      if (aSystem !== bSystem) return aSystem - bSystem;
+
+      if (sortMode === "booksDesc") {
+        if (b.count !== a.count) return b.count - a.count;
+      } else if (sortMode === "booksAsc") {
+        if (a.count !== b.count) return a.count - b.count;
+      }
+      return a.shelf.name.localeCompare(b.shelf.name);
+    });
+  }, [shelvesWithCounts, sortMode]);
+
   return (
     <div className="page">
-      <h1>Planken</h1>
+      <h1>Boekenkasten</h1>
       
 
       <section className="card">
-        <h2>Nieuwe plank</h2>
+        <h2>Nieuwe boekenkast</h2>
         <form onSubmit={handleAdd} className="inline-form">
           <input
             type="text"
@@ -69,15 +117,43 @@ export function ShelvesPage() {
             placeholder="Bijv. Favorieten, Non-fictie"
           />
           <button type="submit" className="primary-button">
-            Plank toevoegen
+            Boekenkast toevoegen
           </button>
         </form>
       </section>
 
       <section className="card">
-        <h2>Mijn planken</h2>
+        <div className="shelf-list-header">
+          <h2>Mijn boekenkasten</h2>
+          <div className="shelf-list-sort">
+            <span className="shelf-list-sort-label">Sorteer op:</span>
+            <div className="shelf-list-sort-buttons">
+              <button
+                type="button"
+                className={`shelf-view-sort-pill ${sortMode === "name" ? "active" : ""}`}
+                onClick={() => setSortMode("name")}
+              >
+                Naam A–Z
+              </button>
+              <button
+                type="button"
+                className={`shelf-view-sort-pill ${sortMode === "booksDesc" ? "active" : ""}`}
+                onClick={() => setSortMode("booksDesc")}
+              >
+                Meeste boeken
+              </button>
+              <button
+                type="button"
+                className={`shelf-view-sort-pill ${sortMode === "booksAsc" ? "active" : ""}`}
+                onClick={() => setSortMode("booksAsc")}
+              >
+                Minste boeken
+              </button>
+            </div>
+          </div>
+        </div>
         <ul className="shelf-list">
-          {shelves.map((shelf) => (
+          {sortedShelves.map(({ shelf, count }) => (
             <li key={shelf.id} className="shelf-item">
               {editingId === shelf.id ? (
                 <div className="shelf-edit-form">
@@ -119,6 +195,9 @@ export function ShelvesPage() {
                     {shelf.system && (
                       <span className="tag">Standaard</span>
                     )}
+                    <span className="shelf-item-count">
+                      {count} {count === 1 ? "boek" : "boeken"}
+                    </span>
                   </Link>
                   <div className="shelf-item-actions">
                     <button

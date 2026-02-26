@@ -719,13 +719,13 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   function addFromSearch(result: SearchResult, targetShelfId: string) {
     const existing = findExistingBookForResult(result);
     const statusFromShelf = STATUS_BY_SHELF_ID[targetShelfId];
-    const shelfName = shelves.find((s) => s.id === targetShelfId)?.name ?? "plank";
+    const shelfName = shelves.find((s) => s.id === targetShelfId)?.name ?? "boekenkast";
 
     // Als het boek al bestaat in de bibliotheek
     if (existing) {
-      // Standaardplanken (status-gebonden)
+      // Standaardboekenkasten (status-gebonden)
       if (statusFromShelf) {
-        // Al dezelfde status → al op deze plank
+        // Al dezelfde status → al op deze boekenkast
         if (existing.status === statusFromShelf) {
           setToast(`Dit boek staat al op "${shelfName}".`);
           window.setTimeout(() => setToast(""), 2500);
@@ -739,7 +739,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
         return;
       }
 
-      // Custom planken: voeg alleen toe als het boek nog niet op die plank staat
+      // Custom boekenkasten: voeg alleen toe als het boek nog niet op die boekenkast staat
       const currentShelfIds = existing.shelfIds ?? [];
       if (currentShelfIds.includes(targetShelfId)) {
         setToast(`Dit boek staat al op "${shelfName}".`);
@@ -962,37 +962,39 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
               <span>Zoek op auteur</span>
             </label>
             <div className="search-input-wrapper" ref={suggestionsRef}>
-              <input
-                type="search"
-                placeholder={searchByAuthor ? "Naam auteur…" : "Zoek op titel of auteur"}
-                value={searchTerm}
-                onChange={(e) => {
-                  suggestionJustSelectedRef.current = false;
-                  setSearchTerm(e.target.value);
-                }}
-                onFocus={() => {
-                  if (!searchByAuthor && suggestions.length > 0 && !suggestionJustSelectedRef.current) {
-                    setShowSuggestions(true);
-                  }
-                }}
-                className="search-input search-input-with-clear"
-              />
-              {searchTerm.trim().length > 0 && (
-                <button
-                  type="button"
-                  className="search-clear-button"
-                  onClick={() => {
-                    setSearchTerm("");
-                    setSuggestions([]);
-                    setShowSuggestions(false);
-                    setSearchResults([]);
-                    setSearchError("");
+              <div className="search-input-inner">
+                <input
+                  type="search"
+                  placeholder={searchByAuthor ? "Naam auteur…" : "Zoek op titel of auteur"}
+                  value={searchTerm}
+                  onChange={(e) => {
+                    suggestionJustSelectedRef.current = false;
+                    setSearchTerm(e.target.value);
                   }}
-                  aria-label="Zoekterm wissen"
-                >
-                  ×
-                </button>
-              )}
+                  onFocus={() => {
+                    if (!searchByAuthor && suggestions.length > 0 && !suggestionJustSelectedRef.current) {
+                      setShowSuggestions(true);
+                    }
+                  }}
+                  className="search-input search-input-with-clear"
+                />
+                {searchTerm.trim().length > 0 && (
+                  <button
+                    type="button"
+                    className="search-clear-button"
+                    onClick={() => {
+                      setSearchTerm("");
+                      setSuggestions([]);
+                      setShowSuggestions(false);
+                      setSearchResults([]);
+                      setSearchError("");
+                    }}
+                    aria-label="Zoekterm wissen"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
               {showSuggestions && suggestions.length > 0 && (
                 <div className="suggestions-dropdown">
                   {suggestions.map((suggestion) => (
@@ -1165,7 +1167,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                       <p className="book-authors">{book.authors}</p>
                       {getBookPlankNames(book).length > 0 && (
                         <div className="book-planks">
-                          <span className="book-planks-label">Planken:</span>
+                          <span className="book-planks-label">Boekenkasten:</span>
                           {getBookPlankNames(book).map((name) => (
                             <span key={name} className="plank-pill plank-pill-inline">{name}</span>
                           ))}
@@ -1249,9 +1251,9 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
             className="modal modal-add-to-shelf"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3>Kies plank voor dit boek</h3>
+            <h3>Kies boekenkast voor dit boek</h3>
             <p className="modal-intro">
-              Naar welke plank wil je
+              Naar welke boekenkast wil je
               {" "}
               <strong>{addToShelfResult.title}</strong>
               {" "}
@@ -1281,7 +1283,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                         onClick={() => {
                           if (alreadyOnShelf) {
                             const shelfName =
-                              shelves.find((s) => s.id === shelf.id)?.name ?? "plank";
+                              shelves.find((s) => s.id === shelf.id)?.name ?? "boekenkast";
                             setToast(`Dit boek staat al op "${shelfName}".`);
                             window.setTimeout(() => setToast(""), 2500);
                             return;
@@ -1349,7 +1351,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                 ×
               </button>
             </div>
-            <p className="modal-intro">Selecteer de boeken die je wilt toevoegen en kies een plank.</p>
+            <p className="modal-intro">Selecteer de boeken die je wilt toevoegen en kies een boekenkast.</p>
             <div className="author-books-language-filter">
               <label htmlFor="author-language-filter">Taal:</label>
               <select
@@ -1412,7 +1414,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                     className="primary-button"
                     onClick={() => setShowAuthorShelfPicker(!showAuthorShelfPicker)}
                   >
-                    {selectedAuthorBookIds.size} geselecteerd · Toevoegen aan plank
+                    {selectedAuthorBookIds.size} geselecteerd · Toevoegen aan boekenkast
                   </button>
                   {showAuthorShelfPicker && (
                     <div className="author-shelf-picker">
@@ -1444,7 +1446,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                           type="text"
                           value={authorNewShelfName}
                           onChange={(e) => setAuthorNewShelfName(e.target.value)}
-                          placeholder="Nieuwe plank naam…"
+                          placeholder="Nieuwe boekenkast naam…"
                           className="add-to-shelf-new-input"
                         />
                         <button
@@ -1471,7 +1473,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                             setSelectedAuthorBookIds(new Set());
                           }}
                         >
-                          Nieuwe plank aanmaken
+                          Nieuwe boekenkast aanmaken
                         </button>
                       </div>
                     </div>

@@ -72,7 +72,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
   const [selectedSharedBookIndices, setSelectedSharedBookIndices] = useState<Map<number, Set<number>>>(() => new Map());
   const [showShelfPickerForItem, setShowShelfPickerForItem] = useState<number | null>(null);
   const [newShelfNameInbox, setNewShelfNameInbox] = useState("");
-  /** Bij eigen plank: kies eerst status voordat we toevoegen */
+  /** Bij eigen boekenkast: kies eerst status voordat we toevoegen */
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [deleteAccountPassword, setDeleteAccountPassword] = useState("");
   const [deleteAccountError, setDeleteAccountError] = useState("");
@@ -385,7 +385,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
             {showDeleteAccount && (
               <form onSubmit={handleDeleteAccount} className="profile-delete-account-form">
                 <p className="profile-delete-account-warning">
-                  Weet je het zeker? Je account en alle gegevens (boeken, planken, vrienden) worden definitief gewist. Dit kan niet ongedaan worden gemaakt.
+                  Weet je het zeker? Je account en alle gegevens (boeken, boekenkasten, vrienden) worden definitief gewist. Dit kan niet ongedaan worden gemaakt.
                 </p>
                 <label className="form-field">
                   <span className="profile-field-label">Vul je wachtwoord in om te bevestigen</span>
@@ -551,16 +551,16 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
       </section>
 
       <section className="profile-card card">
-        <h2 className="profile-card-title">Planken</h2>
-        <p className="profile-card-desc">Eigen planken om je boeken in te delen.</p>
+        <h2 className="profile-card-title">Boekenkasten</h2>
+        <p className="profile-card-desc">Eigen boekenkasten om je boeken in te delen.</p>
         <form onSubmit={handleAddShelf} className="profile-form-row">
           <label className="profile-field profile-field-grow">
-            <span className="profile-field-label visually-hidden">Nieuwe plank</span>
+            <span className="profile-field-label visually-hidden">Nieuwe boekenkast</span>
             <input
               type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="Naam van de plank…"
+              placeholder="Naam van de boekenkast…"
               className="profile-input"
             />
           </label>
@@ -641,7 +641,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                   <p className="shared-inbox-from">
                     <strong>{item.from}</strong>
                     {item.shelfName
-                      ? ` deelde de plank "${item.shelfName}" (${item.books.length} boek${item.books.length === 1 ? "" : "en"})`
+                      ? ` deelde de boekenkast "${item.shelfName}" (${item.books.length} boek${item.books.length === 1 ? "" : "en"})`
                       : ` deelde ${item.books.length} boek${item.books.length === 1 ? "" : "en"}`}
                   </p>
                   <div className="shared-inbox-covers">
@@ -712,7 +712,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                                 setShowShelfPickerForItem(showShelfPickerForItem === itemIndex ? null : itemIndex);
                               }}
                             >
-                              Geselecteerde naar plank
+                              Geselecteerde naar boekenkast
                             </button>
                           {showShelfPickerForItem === itemIndex && (
                             <div className="shared-inbox-shelf-picker">
@@ -745,7 +745,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                                   type="text"
                                   value={newShelfNameInbox}
                                   onChange={(e) => setNewShelfNameInbox(e.target.value)}
-                                  placeholder="Nieuwe plank naam…"
+                                  placeholder="Nieuwe boekenkast naam…"
                                   className="shared-inbox-new-shelf-input"
                                 />
                                 <button
@@ -770,7 +770,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                                     setTimeout(() => { setSharedAddMessage(null); setToast(""); }, 4000);
                                   }}
                                 >
-                                  Nieuwe plank aanmaken
+                                  Nieuwe boekenkast aanmaken
                                 </button>
                               </div>
                             </div>
