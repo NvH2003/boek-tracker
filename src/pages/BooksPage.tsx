@@ -975,8 +975,24 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                     setShowSuggestions(true);
                   }
                 }}
-                className="search-input"
+                className="search-input search-input-with-clear"
               />
+              {searchTerm.trim().length > 0 && (
+                <button
+                  type="button"
+                  className="search-clear-button"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setSuggestions([]);
+                    setShowSuggestions(false);
+                    setSearchResults([]);
+                    setSearchError("");
+                  }}
+                  aria-label="Zoekterm wissen"
+                >
+                  ×
+                </button>
+              )}
               {showSuggestions && suggestions.length > 0 && (
                 <div className="suggestions-dropdown">
                   {suggestions.map((suggestion) => (
