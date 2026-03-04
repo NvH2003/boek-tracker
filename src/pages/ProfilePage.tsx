@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ReadStatus, Shelf } from "../types";
 
@@ -77,6 +77,24 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
   const [deleteAccountPassword, setDeleteAccountPassword] = useState("");
   const [deleteAccountError, setDeleteAccountError] = useState("");
   const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
+
+  const sortedShelves = useMemo(() => {
+    const systemOrder: Record<string, number> = {
+      "wil-ik-lezen": 0,
+      "aan-het-lezen": 1,
+      gelezen: 2
+    };
+    return [...shelves].sort((a, b) => {
+      if (a.system && b.system) {
+        const ao = systemOrder[a.id] ?? 99;
+        const bo = systemOrder[b.id] ?? 99;
+        return ao - bo;
+      }
+      if (a.system && !b.system) return -1;
+      if (!a.system && b.system) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [shelves]);
   const [usernamesRefresh, setUsernamesRefresh] = useState(0);
   const [usernamesLoadError, setUsernamesLoadError] = useState<string | null>(null);
 
@@ -570,7 +588,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
         </form>
 
         <ul className="profile-shelf-list">
-          {shelves.map((shelf) => (
+          {sortedShelves.map((shelf) => (
             <li key={shelf.id} className={`profile-shelf-item ${editingId === shelf.id ? "editing" : ""}`}>
               {editingId === shelf.id ? (
                 <div className="profile-shelf-edit">

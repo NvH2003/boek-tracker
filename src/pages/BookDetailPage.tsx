@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { loadBooks, loadShelves, saveBooks, subscribeBooks } from "../storage";
 import { Book, ReadStatus, Shelf } from "../types";
 import { RatingStars } from "../components/RatingStars";
@@ -20,12 +20,15 @@ export interface BookDetailPageProps {
 
 export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {}) {
   const { id: routeId } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const basePath = useBasePath();
   const [books, setBooks] = useState<Book[]>(() => loadBooks());
 
   const id = modalBookId ?? routeId;
   const isModal = Boolean(modalBookId && onClose);
+  const search = new URLSearchParams(location.search);
+  const from = search.get("from");
 
   // Sync books tussen tabs/shells (web ↔ mobile)
   useEffect(() => {
@@ -93,7 +96,15 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         <button
           type="button"
           className="secondary-button"
-          onClick={() => (isModal ? onClose?.() : navigate(withBase(basePath, "/boeken")))}
+          onClick={() => {
+            if (isModal) {
+              onClose?.();
+            } else if (from === "bibliotheek") {
+              navigate(withBase(basePath, "/bibliotheek"));
+            } else {
+              navigate(withBase(basePath, "/boeken"));
+            }
+          }}
         >
           Terug naar overzicht
         </button>
@@ -174,8 +185,13 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         : b
     );
     persist(updatedBooks);
-    if (isModal) onClose?.();
-    else navigate(withBase(basePath, "/boeken"));
+    if (isModal) {
+      onClose?.();
+    } else if (from === "bibliotheek") {
+      navigate(withBase(basePath, "/bibliotheek"));
+    } else {
+      navigate(withBase(basePath, "/boeken"));
+    }
   }
 
   function handleSeriesSelect(value: string) {

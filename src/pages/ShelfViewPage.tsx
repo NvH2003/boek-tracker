@@ -529,10 +529,18 @@ export function ShelfViewPage() {
           {book.authors && effectiveGroupMode !== "author" && (
             <span className="bookcase-book-author">{book.authors}</span>
           )}
-          {book.seriesName?.trim() && effectiveGroupMode !== "series" && (
+          {(book.seriesName?.trim() || book.seriesNumber != null) && (
             <div className="book-series-badge">
-              {book.seriesName.trim()}
-              {book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}
+              {effectiveGroupMode === "series"
+                ? book.seriesNumber != null
+                  ? `#${book.seriesNumber}`
+                  : ""
+                : (
+                  <>
+                    {book.seriesName?.trim()}
+                    {book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}
+                  </>
+                )}
             </div>
           )}
           {isCustomShelf && effectiveGroupMode !== "status" && (

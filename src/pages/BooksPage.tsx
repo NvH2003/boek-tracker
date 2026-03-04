@@ -930,7 +930,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   }
 
   function goToDetails(bookId: string) {
-    navigate(withBase(basePath, `/boek/${bookId}`));
+    const from = mode === "library" ? "?from=bibliotheek" : "";
+    navigate(withBase(basePath, `/boek/${bookId}${from}`));
   }
 
   /** Voor een boek in de weekchallenge: huidige bladzijde (hoogste uit dailyReadingPerBook) en totaal. */
