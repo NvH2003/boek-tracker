@@ -2,6 +2,7 @@ import { Link, Route, Routes, Navigate, useLocation, useNavigate } from "react-r
 import { useState, useEffect } from "react";
 import { getCurrentUsername, clearCurrentUser, initSupabaseSession } from "./auth";
 import { syncFromSupabase, pushLocalToSupabase, loadSharedInbox } from "./storage";
+import { isSupabaseConfigured } from "./supabase";
 import { BooksPage } from "./pages/BooksPage";
 import { ChallengePage } from "./pages/ChallengePage";
 import { LoginPage } from "./pages/LoginPage";
@@ -31,6 +32,7 @@ export function App() {
   const [hasSharedInboxItems, setHasSharedInboxItems] = useState<boolean>(
     () => loadSharedInbox().length > 0
   );
+  const isCloudSyncEnabled = isSupabaseConfigured();
 
   useEffect(() => {
     (async () => {
@@ -126,6 +128,11 @@ export function App() {
         </header>
       )}
       <main className="app-main">
+        {isLoggedIn && !isCloudSyncEnabled && (
+          <div className="cloud-sync-warning">
+            Wijzigingen worden nu alleen op dit apparaat opgeslagen. Cloud‑sync staat uit.
+          </div>
+        )}
         <Routes>
           {/* Korte URL's: /profiel, /boeken, /login, … = mobiele view */}
           <Route

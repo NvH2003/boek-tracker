@@ -80,6 +80,16 @@ body {
   width: 100%;
 }
 
+.cloud-sync-warning {
+  margin-bottom: 0.75rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(248, 250, 252, 0.35);
+  background: linear-gradient(135deg, rgba(30, 64, 175, 0.8), rgba(15, 23, 42, 0.95));
+  color: #e5e7eb;
+  font-size: 0.8rem;
+}
+
 .app-root-mobile .app-main {
   max-width: 100%;
   margin: 0;
