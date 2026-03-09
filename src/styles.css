@@ -2515,6 +2515,18 @@ select {
   margin-top: 0.4rem;
 }
 
+.weekchallenge-mobile-days-per-book {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.weekchallenge-mobile-book-days-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
 .weekchallenge-mobile-day-chip {
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.5);

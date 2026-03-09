@@ -115,7 +115,7 @@ export function ChallengePage() {
     }));
   });
   const [weekSelectedBookIds, setWeekSelectedBookIds] = useState<string[]>([]);
-  const [weekReadingDays, setWeekReadingDays] = useState<string[]>([]);
+  const [weekReadingDaysByBook, setWeekReadingDaysByBook] = useState<Record<string, string[]>>({});
 
   function syncWeekBooksDraft(count: number) {
     setWeekBooksDraft((prev) => {
@@ -181,7 +181,7 @@ export function ChallengePage() {
       setWeekChallengeEndDate(endDate);
       setWeekBookCount(1);
       setWeekSelectedBookIds([]);
-      setWeekReadingDays([]);
+      setWeekReadingDaysByBook({});
       const start = getDateFromString(today);
       const end = getDateFromString(endDate);
       const allDays: string[] = [];
@@ -401,6 +401,18 @@ export function ChallengePage() {
           cumulativeTarget += dayTotal;
           plannedCumulativeByDate[day.dateStr] = cumulativeTarget;
         }
+      }
+
+      // Laat aan het einde van de week dagen zonder geplande pagina's weg
+      let lastWithTarget = allDays.length - 1;
+      while (
+        lastWithTarget >= 0 &&
+        (targetPagesPerDay[allDays[lastWithTarget].dateStr] || 0) === 0
+      ) {
+        lastWithTarget -= 1;
+      }
+      if (lastWithTarget >= 0 && lastWithTarget < allDays.length - 1) {
+        allDays.length = lastWithTarget + 1;
       }
       
       // Bereken cumulatieve bladzijden per dag (totaal, voor voortgang)
@@ -1136,71 +1148,52 @@ export function ChallengePage() {
           dayCursor.setDate(dayCursor.getDate() + 1);
         }
 
-        const readingDays =
-          weekReadingDays.length > 0
-            ? weekReadingDays
-            : allDays.map((d) => d.dateStr);
-
         const selectedBooksForWeek = books.filter((b) =>
           weekSelectedBookIds.includes(b.id)
         );
 
-        const totalPagesToRead = selectedBooksForWeek.reduce((sum, b) => {
-          return sum + (b.pageCount || 0);
-        }, 0);
-
-        const pagesPerDay =
-          readingDays.length > 0 ? Math.ceil(totalPagesToRead / readingDays.length) : 0;
-
         function buildWeekDraftFromMobileSelection(): WeekDraftRow[] | null {
-          if (!selectedBooksForWeek.length || !readingDays.length) {
+          if (!selectedBooksForWeek.length) {
             return null;
           }
-          const readingDaysSorted = [...readingDays].sort();
-          const totalPagesToRead = selectedBooksForWeek.reduce(
-            (s, b) => s + (b.pageCount || 0),
-            0
-          );
-          const pagesPerDay =
-            totalPagesToRead > 0 && readingDaysSorted.length > 0
-              ? Math.ceil(totalPagesToRead / readingDaysSorted.length)
-              : 0;
-          if (pagesPerDay <= 0) return null;
-          // Vul elke dag met pagesPerDay blz; haal uit boeken in volgorde. Als boek 1 op een dag nog maar 20 blz heeft, vul de rest van de dag met boek 2 (bijv. 130 blz).
-          const allocations: { bookIndex: number; dateStr: string; pages: number }[] = [];
-          let bookIndex = 0;
-          let remainingInBook = selectedBooksForWeek[0]?.pageCount ?? 0;
-          for (const dateStr of readingDaysSorted) {
-            let remainingToFill = pagesPerDay;
-            while (remainingToFill > 0 && bookIndex < selectedBooksForWeek.length) {
-              const take = Math.min(remainingInBook, remainingToFill);
-              if (take > 0) {
-                allocations.push({ bookIndex, dateStr, pages: take });
-                remainingInBook -= take;
-                remainingToFill -= take;
-              }
-              if (remainingInBook <= 0) {
-                bookIndex += 1;
-                remainingInBook = selectedBooksForWeek[bookIndex]?.pageCount ?? 0;
-              }
-            }
-          }
           const drafts: WeekDraftRow[] = selectedBooksForWeek.map((book, i) => {
+            const allDayStrings = allDays.map((d) => d.dateStr);
+            let selectedDays = weekReadingDaysByBook[book.id] ?? [];
+            if (!selectedDays.length) {
+              selectedDays = allDayStrings;
+            }
+            const readingDaysSorted = [...selectedDays].sort();
             const daily: Record<string, string> = {};
-            readingDaysSorted.forEach((d) => {
+            allDayStrings.forEach((d) => {
               daily[d] = "";
             });
-            allocations
-              .filter((a) => a.bookIndex === i)
-              .forEach((a) => {
-                daily[a.dateStr] = String(a.pages);
-              });
-            const selectedDays = readingDaysSorted.filter((d) => Number(daily[d] || 0) > 0);
+            const totalPages = book.pageCount || 0;
+            const pagesPerDay =
+              totalPages > 0 && readingDaysSorted.length > 0
+                ? Math.ceil(totalPages / readingDaysSorted.length)
+                : 0;
+            if (pagesPerDay <= 0) {
+              return {
+                bookId: book.id,
+                totalPages: String(totalPages),
+                dailyPages: daily,
+                selectedDays: [],
+              };
+            }
+            let pagesAssigned = 0;
+            readingDaysSorted.forEach((dateStr, idx) => {
+              let pages = pagesPerDay;
+              if (idx === readingDaysSorted.length - 1) {
+                pages = Math.max(1, totalPages - pagesAssigned);
+              }
+              daily[dateStr] = String(pages);
+              pagesAssigned += pages;
+            });
             return {
               bookId: book.id,
               totalPages: String(book.pageCount ?? 0),
               dailyPages: daily,
-              selectedDays,
+              selectedDays: readingDaysSorted,
             };
           });
           return drafts.length ? drafts : [];
@@ -1316,50 +1309,61 @@ export function ChallengePage() {
                     </div>
                   </div>
 
-                  <div className="form-field">
-                    <span>Leesdagen</span>
-                    <div className="weekchallenge-mobile-days-chips">
-                      {allDays.map((day) => {
-                        const isSelected = readingDays.includes(day.dateStr);
-                        return (
-                          <button
-                            key={day.dateStr}
-                            type="button"
-                            className={`weekchallenge-mobile-day-chip ${
-                              isSelected ? "selected" : ""
-                            }`}
-                            onClick={() => {
-                              setWeekReadingDays((prev) => {
-                                const exists = prev.includes(day.dateStr);
-                                if (exists) {
-                                  return prev.filter((d) => d !== day.dateStr);
-                                }
-                                return [...prev, day.dateStr].sort();
-                              });
-                            }}
-                          >
-                            {getDayName(day.date).substring(0, 2)} {formatDateDisplay(day.dateStr)}
-                          </button>
-                        );
-                      })}
+                  {weekSelectedBookIds.length > 0 && (
+                    <div className="form-field">
+                      <span>Leesdagen per boek</span>
+                      <div className="weekchallenge-mobile-days-per-book">
+                        {weekSelectedBookIds.map((bookId) => {
+                          const book = books.find((b) => b.id === bookId);
+                          if (!book) return null;
+                          const selected = weekReadingDaysByBook[bookId] ?? [];
+                          return (
+                            <div key={bookId} className="weekchallenge-mobile-book-days">
+                              <div className="weekchallenge-mobile-book-days-title">
+                                {book.title}
+                              </div>
+                              <div className="weekchallenge-mobile-days-chips">
+                                {allDays.map((day) => {
+                                  const isSelected = selected.includes(day.dateStr);
+                                  return (
+                                    <button
+                                      key={day.dateStr}
+                                      type="button"
+                                      className={`weekchallenge-mobile-day-chip ${
+                                        isSelected ? "selected" : ""
+                                      }`}
+                                      onClick={() => {
+                                        setWeekReadingDaysByBook((prev) => {
+                                          const current = prev[bookId] ?? [];
+                                          const exists = current.includes(day.dateStr);
+                                          const nextForBook = exists
+                                            ? current.filter((d) => d !== day.dateStr)
+                                            : [...current, day.dateStr].sort();
+                                          return { ...prev, [bookId]: nextForBook };
+                                        });
+                                      }}
+                                    >
+                                      {getDayName(day.date).substring(0, 2)}{" "}
+                                      {formatDateDisplay(day.dateStr)}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="weekchallenge-mobile-summary">
                     {selectedBooksForWeek.length === 0 ? (
                       <p className="weekchallenge-mobile-summary-text">
                         Kies minimaal één boek om een weekchallenge te maken.
                       </p>
-                    ) : readingDays.length === 0 ? (
-                      <p className="weekchallenge-mobile-summary-text">
-                        Kies de dagen waarop je wilt lezen.
-                      </p>
                     ) : (
                       <p className="weekchallenge-mobile-summary-text">
-                        In totaal{" "}
-                        <strong>{totalPagesToRead || 0} pagina&apos;s</strong> in{" "}
-                        <strong>{readingDays.length} leesdagen</strong> → ongeveer{" "}
-                        <strong>{pagesPerDay} blz per dag</strong>.
+                        Je kiest nu per boek op welke dagen je wilt lezen.
                       </p>
                     )}
                   </div>
