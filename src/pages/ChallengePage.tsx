@@ -1719,8 +1719,11 @@ export function ChallengePage() {
                   goal.date
                 );
                 const isOffDay = isAutoOff || isManualOff;
+                const hasTargets = goal.bookTargets && goal.bookTargets.length > 0;
+                const hasWeekChallenge = Boolean(challenge.weeklyChallenge);
+                const isNoReadDay = (hasWeekChallenge && !hasTargets) || isOffDay;
                 const isThursday = goal.dateObj.getDay() === 4;
-                const isComplete = goal.effectiveRead >= goal.target;
+                const isComplete = !isNoReadDay && goal.effectiveRead >= goal.target;
                 const plannedCumulative = goal.plannedCumulative;
                 let targetUntilToday: number;
                 if (challenge.weeklyChallenge) {
@@ -1737,7 +1740,7 @@ export function ChallengePage() {
                 return (
                   <div
                     key={goal.date}
-                    className={`daily-goal-item-compact ${isToday ? "today" : ""} ${isPast ? "past" : ""} ${isThursday ? "week-start" : ""} ${isComplete ? "complete" : ""} ${isOffDay ? "off-day" : ""}`}
+                    className={`daily-goal-item-compact ${isToday ? "today" : ""} ${isPast ? "past" : ""} ${isThursday ? "week-start" : ""} ${isComplete ? "complete" : ""} ${isNoReadDay ? "off-day" : ""}`}
                   >
                     <div className="daily-goal-header-compact">
                       <div>
@@ -1759,8 +1762,8 @@ export function ChallengePage() {
                       </div>
                     </div>
                     <div className="daily-goal-content-compact">
-                      {!isOffDay && goal.bookTargets && goal.bookTargets.length > 0 ? (
-                        goal.bookTargets.map((bt) => {
+                      {!isNoReadDay && hasTargets ? (
+                        (goal.bookTargets ?? []).map((bt) => {
                           const raw = challenge.dailyReadingPerBook?.[goal.date]?.[bt.bookId];
                           const bookValue = raw !== undefined && raw !== null
                             ? raw
@@ -1792,42 +1795,52 @@ export function ChallengePage() {
                                 <button
                                   type="button"
                                   className="complete-button"
-                                  onClick={() => markBookDayComplete(goal, bt.bookId, bt.cumulativePage)}
+                                  onClick={() =>
+                                    markBookDayComplete(
+                                      goal,
+                                      bt.bookId,
+                                      bt.cumulativePage
+                                    )
+                                  }
                                   title="Boek voor vandaag afvinken"
                                 >
                                   ✓ Afvinken
                                 </button>
                               ) : (
-                                <div className="daily-goal-complete-compact">✓ Behaald</div>
+                                <div className="daily-goal-complete-compact">
+                                  ✓ Behaald
+                                </div>
                               )}
                             </div>
                           );
                         })
                       ) : (
                         <>
-                          {!isOffDay && (
+                          {isNoReadDay ? (
                             <div className="daily-goal-target-compact">
-                              Lees tot bladzijde {targetUntilToday}
+                              Geen leesdag
                             </div>
-                          )}
-                          <div className="daily-goal-input-compact">
-                            <label className="daily-goal-input-label">
-                              Gelezen tot bladzijde...
-                            </label>
-                            <input
-                              type="number"
-                              value={goal.cumulativePages || ""}
-                              onChange={(e) => {
-                                const pages = Number(e.target.value) || 0;
-                                updateDailyReading(goal.date, pages);
-                              }}
-                              min="0"
-                              placeholder="0"
-                              className="pages-input-compact"
-                            />
-                          </div>
-                          {!isOffDay && (
+                          ) : (
                             <>
+                              <div className="daily-goal-target-compact">
+                                Lees tot bladzijde {targetUntilToday}
+                              </div>
+                              <div className="daily-goal-input-compact">
+                                <label className="daily-goal-input-label">
+                                  Gelezen tot bladzijde...
+                                </label>
+                                <input
+                                  type="number"
+                                  value={goal.cumulativePages || ""}
+                                  onChange={(e) => {
+                                    const pages = Number(e.target.value) || 0;
+                                    updateDailyReading(goal.date, pages);
+                                  }}
+                                  min="0"
+                                  placeholder="0"
+                                  className="pages-input-compact"
+                                />
+                              </div>
                               {!isComplete && (
                                 <button
                                   type="button"
@@ -1839,7 +1852,9 @@ export function ChallengePage() {
                                 </button>
                               )}
                               {isComplete && (
-                                <div className="daily-goal-complete-compact">✓ Behaald</div>
+                                <div className="daily-goal-complete-compact">
+                                  ✓ Behaald
+                                </div>
                               )}
                               {goal.remaining > 0 && !isComplete && (
                                 <div className="daily-goal-remaining-compact">
