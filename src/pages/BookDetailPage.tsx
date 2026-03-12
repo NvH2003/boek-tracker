@@ -57,17 +57,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   const [coverUrl, setCoverUrl] = useState<string>(book?.coverUrl ?? "");
   const [description, setDescription] = useState<string>(book?.description ?? "");
   const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [useCustomSeries, setUseCustomSeries] = useState<boolean>(() => {
-    // Als het boek al een serie heeft die niet in de bestaande series staat, gebruik custom input
-    if (book?.seriesName) {
-      const allSeries = new Set<string>();
-      loadBooks().forEach((b) => {
-        if (b.seriesName) allSeries.add(b.seriesName);
-      });
-      return !allSeries.has(book.seriesName);
-    }
-    return false;
-  });
 
   // Haal alle unieke serie namen op
   const existingSeries = useMemo(() => {
@@ -125,6 +114,28 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     const updated = books.map((b) => (b.id === book.id ? { ...b, ...updates } : b));
     persist(updated);
     if (updates.status !== undefined) setStatus(updates.status);
+  }
+
+  function deleteSeriesEverywhere(rawName: string) {
+    const name = rawName.trim();
+    if (!name) return;
+    if (
+      !window.confirm(
+        `Weet je zeker dat je de serie "${name}" bij alle boeken wilt verwijderen?`
+      )
+    ) {
+      return;
+    }
+    const updated = books.map((b) =>
+      (b.seriesName ?? "").trim() === name
+        ? { ...b, seriesName: undefined, seriesNumber: undefined }
+        : b
+    );
+    persist(updated);
+    if (book && (book.seriesName ?? "").trim() === name) {
+      setSeriesName("");
+      setSeriesNumber("");
+    }
   }
 
   function handleStatusChange(newStatus: ReadStatus) {
@@ -199,16 +210,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     }
   }
 
-  function handleSeriesSelect(value: string) {
-    if (value === "__new__") {
-      setUseCustomSeries(true);
-      setSeriesName("");
-    } else {
-      setUseCustomSeries(false);
-      setSeriesName(value);
-    }
-  }
-
   return (
     <div className={`page ${isModal ? "book-detail-modal-content" : ""}`}>
       {isModal && (
@@ -225,19 +226,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         </div>
       )}
       {!isModal && <h1>Boek aanpassen</h1>}
-
-      {bookPlanks.length > 0 && (
-        <div className="book-detail-shelves-summary">
-          <span className="book-detail-shelves-label">Boekenkasten:</span>
-          <div className="book-detail-shelves-pills">
-            {bookPlanks.map((shelf) => (
-              <span key={shelf.id} className="plank-pill plank-pill-inline">
-                {shelf.name}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
       <form onSubmit={handleSubmit} className="card form-card book-detail-form">
         <div className="form-field">
           <span>Titel</span>
@@ -320,8 +308,13 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
           />
         </div>
         <div className="form-field book-detail-planks">
-          <span>Staat op boekenkast</span>
+          <span>Boekenkast(en)</span>
           <div className="book-detail-plank-pills">
+            {status !== "geen-status" && (
+              <span className="plank-pill">
+                {STATUS_LABELS[status]}
+              </span>
+            )}
             {bookPlanks.map((shelf) => (
               <span key={shelf.id} className="plank-pill">
                 <Link to={withBase(basePath, `/plank/${shelf.id}`)} className="plank-pill-link">
@@ -365,42 +358,92 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         </div>
         <div className="form-field">
           <span>Serie naam (optioneel)</span>
-          {!useCustomSeries && existingSeries.length > 0 ? (
-            <div className="series-select-wrapper">
-              <select
-                value={seriesName || ""}
-                onChange={(e) => handleSeriesSelect(e.target.value)}
-                className="series-select"
-              >
-                <option value="">Geen serie</option>
-                {existingSeries.map((series) => (
-                  <option key={series} value={series}>
-                    {series}
-                  </option>
-                ))}
-                <option value="__new__">+ Nieuwe serie toevoegen</option>
-              </select>
-            </div>
-          ) : (
-            <div className="series-input-wrapper">
+          <div className="search-input-wrapper">
+            <div className="search-input-inner">
               <input
                 type="text"
                 value={seriesName}
                 onChange={(e) => setSeriesName(e.target.value)}
                 placeholder="Bijv. De zeven zussen"
-                className="series-input"
               />
-              {existingSeries.length > 0 && (
+              {seriesName && (
                 <button
                   type="button"
-                  className="link-button"
-                  onClick={() => setUseCustomSeries(false)}
+                  className="search-clear-button"
+                  onClick={() => setSeriesName("")}
+                  aria-label="Serie wissen"
                 >
-                  Selecteer bestaande serie
+                  ×
                 </button>
               )}
             </div>
-          )}
+            {(() => {
+              const trimmed = seriesName.trim();
+              if (!trimmed) return null;
+              const matches = existingSeries
+                .filter((name) =>
+                  name.toLowerCase().includes(trimmed.toLowerCase())
+                )
+                .filter((name) => name !== trimmed)
+                .slice(0, 8);
+              if (matches.length === 0) return null;
+              return (
+                <div className="search-suggestions">
+                  {matches.map((name) => (
+                    <div
+                      key={name}
+                      className="search-suggestion-item"
+                      onClick={() => setSeriesName(name)}
+                    >
+                      <span className="search-suggestion-label">{name}</span>
+                      <button
+                        type="button"
+                        className="search-suggestion-edit"
+                        aria-label={`Serienaam "${name}" bewerken`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const current = name;
+                          const nextName = window
+                            .prompt("Nieuwe naam voor deze serie:", current)
+                            ?.trim();
+                          if (!nextName || nextName === current) return;
+                          if (
+                            !window.confirm(
+                              `Alle boeken met serie "${current}" hernoemen naar "${nextName}"?`
+                            )
+                          ) {
+                            return;
+                          }
+                          const updated = books.map((b) =>
+                            (b.seriesName ?? "").trim() === current
+                              ? { ...b, seriesName: nextName }
+                              : b
+                          );
+                          persist(updated);
+                          if ((book?.seriesName ?? "").trim() === current) {
+                            setSeriesName(nextName);
+                          }
+                        }}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        className="search-suggestion-delete"
+                        aria-label={`Serie "${name}" overal verwijderen`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteSeriesEverywhere(name);
+                        }}
+                      >
+                        🗑
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
         </div>
         <div className="form-field">
           <span>
