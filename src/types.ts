@@ -14,7 +14,10 @@ export interface Book {
   finishedAt?: string;
   seriesName?: string;
   seriesNumber?: number;
+  /** Handmatige volgorde voor boeken zonder serie (detailpagina / boekenkasten) */
   order?: number;
+  /** Volgorde op de TBR-leeslijst (mobiele leeslijst en pijltjes) */
+  tbrOrder?: number;
   /** Ids van eigen planken waarop dit boek staat (naast status voor standaardplanken) */
   shelfIds?: string[];
 }

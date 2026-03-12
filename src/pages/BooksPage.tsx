@@ -92,6 +92,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   const [manualSeriesNumber, setManualSeriesNumber] = useState("");
   const [manualUseCustomSeries, setManualUseCustomSeries] = useState(false);
   const [manualCoverUrl, setManualCoverUrl] = useState("");
+  const [manualShelfIds, setManualShelfIds] = useState<string[]>([]);
   const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
   const [addToShelfResult, setAddToShelfResult] = useState<SearchResult | null>(null);
   const [showAddToShelfModal, setShowAddToShelfModal] = useState(false);
@@ -106,6 +107,20 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   /** Open Library 3-letter code: "" = all, "dut" = Nederlands, "eng" = English, etc. */
   const [authorLanguageFilter, setAuthorLanguageFilter] = useState<string>("");
 
+  const existingAuthors = useMemo(() => {
+    const set = new Set<string>();
+    books.forEach((b) => {
+      if (b.authors) {
+        b.authors
+          .split(",")
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .forEach((name) => set.add(name));
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "nl-NL"));
+  }, [books]);
+
   const existingSeries = useMemo(() => {
     const set = new Set<string>();
     books.forEach((b) => {
@@ -113,6 +128,22 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     });
     return Array.from(set).sort();
   }, [books]);
+
+  const manualSelectedShelves = useMemo(
+    () =>
+      shelves
+        .filter((s) => manualShelfIds.includes(s.id))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [shelves, manualShelfIds]
+  );
+
+  const manualShelvesToAdd = useMemo(
+    () =>
+      shelves
+        .filter((s) => !manualShelfIds.includes(s.id))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [shelves, manualShelfIds]
+  );
 
   const suggestionsAbortRef = useRef<AbortController | null>(null);
   const resultsAbortRef = useRef<AbortController | null>(null);
@@ -826,6 +857,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     setManualSeriesNumber("");
     setManualUseCustomSeries(false);
     setManualCoverUrl("");
+    const tbrShelf = shelves.find((s) => s.id === "wil-ik-lezen");
+    setManualShelfIds(tbrShelf ? [tbrShelf.id] : []);
     setShowManualBookModal(true);
   }
 
@@ -845,6 +878,16 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     const seriesName = manualSeriesName.trim() || undefined;
     const seriesNum = manualSeriesNumber.trim() !== "" ? Number(manualSeriesNumber.trim()) || undefined : undefined;
     const coverUrl = manualCoverUrl.trim() || undefined;
+    const shelfIds =
+      effectiveStatus === "wil-ik-lezen" ||
+      effectiveStatus === "aan-het-lezen" ||
+      effectiveStatus === "gelezen"
+        ? manualShelfIds.length > 0
+          ? manualShelfIds
+          : undefined
+        : manualShelfIds.length > 0
+          ? manualShelfIds
+          : undefined;
 
     const newBook: Book = {
       id: `manual-${Date.now()}`,
@@ -854,7 +897,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       status: effectiveStatus,
       ...(seriesName && { seriesName }),
       ...(seriesNum != null && seriesNum > 0 && { seriesNumber: seriesNum }),
-      ...(coverUrl && { coverUrl })
+      ...(coverUrl && { coverUrl }),
+      ...(shelfIds && { shelfIds })
     };
     persist([...books, newBook]);
     closeManualBookModal();
@@ -1518,12 +1562,75 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
               </label>
               <label className="form-field">
                 <span>Auteur(s)</span>
-                <input
-                  type="text"
-                  value={manualAuthors}
-                  onChange={(e) => setManualAuthors(e.target.value)}
-                  placeholder="Bijv. Marieke Lucas Rijneveld"
-                />
+                <div className="search-input-wrapper">
+                  <div className="search-input-inner">
+                    <input
+                      type="text"
+                      value={manualAuthors}
+                      onChange={(e) => setManualAuthors(e.target.value)}
+                      placeholder="Bijv. Marieke Lucas Rijneveld"
+                    />
+                    {manualAuthors && (
+                      <button
+                        type="button"
+                        className="search-clear-button"
+                        onClick={() => setManualAuthors("")}
+                        aria-label="Auteur wissen"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  {(() => {
+                    const trimmed = manualAuthors.trim();
+                    if (!trimmed) return null;
+                    const parts = manualAuthors
+                      .split(",")
+                      .map((p) => p.trim())
+                      .filter(Boolean);
+                    const activeToken =
+                      parts.length > 0 ? parts[parts.length - 1] : trimmed;
+                    const currentAuthors = parts;
+                    const matches = existingAuthors
+                      .filter((name) =>
+                        name.toLowerCase().includes(activeToken.toLowerCase())
+                      )
+                      .filter((name) => !currentAuthors.includes(name))
+                      .slice(0, 8);
+                    if (matches.length === 0) return null;
+                    return (
+                      <div className="search-suggestions">
+                        {matches.map((name) => (
+                          <button
+                            key={name}
+                            type="button"
+                            className="search-suggestion-item"
+                            onClick={() => {
+                              const baseParts = manualAuthors
+                                .split(",")
+                                .map((p) => p.trim());
+                              if (baseParts.length === 0) {
+                                setManualAuthors(name + ", ");
+                                return;
+                              }
+                              baseParts[baseParts.length - 1] = name;
+                              const unique = Array.from(
+                                new Set(
+                                  baseParts
+                                    .map((p) => p.trim())
+                                    .filter(Boolean)
+                                )
+                              );
+                              setManualAuthors(unique.join(", ") + ", ");
+                            }}
+                          >
+                            {name}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
               </label>
               <label className="form-field">
                 <span>Aantal pagina&apos;s (optioneel)</span>
@@ -1534,6 +1641,48 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                   placeholder="Bijv. 320"
                   min={1}
                 />
+              </label>
+              <label className="form-field">
+                <span>Boekenkast(en)</span>
+                <div className="book-detail-plank-pills">
+                  {manualSelectedShelves.map((shelf) => (
+                    <span key={shelf.id} className="plank-pill">
+                      {shelf.name}
+                      <button
+                        type="button"
+                        className="plank-pill-remove"
+                        aria-label={`Verwijder uit boekenkast ${shelf.name}`}
+                        onClick={() =>
+                          setManualShelfIds((prev) => prev.filter((id) => id !== shelf.id))
+                        }
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  {manualShelvesToAdd.length > 0 && (
+                    <select
+                      className="book-detail-add-plank-select"
+                      value=""
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (!v) return;
+                        setManualShelfIds((prev) =>
+                          prev.includes(v) ? prev : [...prev, v]
+                        );
+                        e.target.value = "";
+                      }}
+                      aria-label="Toevoegen aan boekenkast"
+                    >
+                      <option value="">+ Toevoegen aan boekenkast</option>
+                      {manualShelvesToAdd.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </label>
               <label className="form-field">
                 <span>Serie (optioneel)</span>
@@ -1600,9 +1749,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                   placeholder="Bijv. https://... afbeelding.jpg"
                 />
               </label>
-              <p className="manual-book-hint">
-                Het boek wordt toegevoegd aan &quot;{statusFilter === "alle" ? "Wil ik lezen" : STATUS_LABELS[statusFilter]}&quot;.
-              </p>
               <div className="form-actions">
                 <button type="button" className="secondary-button" onClick={closeManualBookModal}>
                   Annuleren

@@ -28,15 +28,15 @@ function getDayOfYear(date: Date): number {
 
 function sortBooksBySeries(books: Book[]): Book[] {
   return [...books].sort((a, b) => {
-    // Voor "Wil ik lezen": volgorde is de hoogste prioriteit
+    // Voor "Wil ik lezen": volgorde op de leeslijst (tbrOrder) heeft voorrang
     if (a.status === "wil-ik-lezen" && b.status === "wil-ik-lezen") {
-      const orderA = a.order ?? 0;
-      const orderB = b.order ?? 0;
-      
+      const orderA = a.tbrOrder ?? a.order ?? 0;
+      const orderB = b.tbrOrder ?? b.order ?? 0;
+
       // Boeken met volgorde (order > 0) komen voor boeken zonder volgorde (order = 0)
       if (orderA > 0 && orderB === 0) return -1;
       if (orderA === 0 && orderB > 0) return 1;
-      
+
       // Als beide een volgorde hebben, sorteer op volgorde
       if (orderA > 0 && orderB > 0) {
         if (orderA !== orderB) {
@@ -44,7 +44,6 @@ function sortBooksBySeries(books: Book[]): Book[] {
         }
         // Zelfde volgorde, ga door naar volgende sorteerregel
       }
-      
       // Zelfde volgorde (of beide geen volgorde), dan op auteur
       const authorCompare = a.authors.localeCompare(b.authors);
       if (authorCompare !== 0) {
@@ -101,7 +100,7 @@ function sortBooksBySeries(books: Book[]): Book[] {
     if (a.seriesName && !b.seriesName) return -1;
     if (!a.seriesName && b.seriesName) return 1;
     
-    // Beide geen serie, sorteer op volgorde, dan op titel
+    // Beide geen serie, sorteer op detail-volgorde (order), dan op titel
     const orderA = a.order ?? 0;
     const orderB = b.order ?? 0;
     if (orderA !== orderB) {
@@ -157,6 +156,10 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
   const [mobileBooksSubTab, setMobileBooksSubTab] = useState<"leeslijst" | "gelezen">("leeslijst");
   const [readSeriesFilter, setReadSeriesFilter] = useState<string>("alle");
   const [readSortDirection, setReadSortDirection] = useState<"asc" | "desc">("desc");
+  const [tbrSearchOpen, setTbrSearchOpen] = useState(false);
+  const [tbrSearch, setTbrSearch] = useState("");
+  const [readSearchOpen, setReadSearchOpen] = useState(false);
+  const [readSearch, setReadSearch] = useState("");
   const [selectedBookIds, setSelectedBookIds] = useState<Set<string>>(new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [showAddToShelfModal, setShowAddToShelfModal] = useState(false);
@@ -254,7 +257,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
     setEditingPageCount(book.pageCount != null ? String(book.pageCount) : "");
     setEditingSeriesName(book.seriesName ?? "");
     setEditingSeriesNumber(book.seriesNumber != null ? String(book.seriesNumber) : "");
-    setEditingOrder(book.order != null ? String(book.order) : "");
+    setEditingOrder(book.tbrOrder != null ? String(book.tbrOrder) : "");
     setUseCustomSeries(!!(book.seriesName && !existingSeries.includes(book.seriesName)));
   }
 
@@ -280,7 +283,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
             ...b,
             seriesName: seriesName?.trim() || undefined,
             seriesNumber,
-            order: order ?? b.order
+            tbrOrder: order ?? b.tbrOrder
           }
         : b
     );
@@ -290,7 +293,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
         ...selectedBook,
         seriesName: seriesName?.trim() || undefined,
         seriesNumber,
-        order: order ?? selectedBook.order
+        tbrOrder: order ?? selectedBook.tbrOrder
       });
     }
   }
@@ -359,7 +362,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
 
     const nextBooks = books.map((b) =>
       b.status === "wil-ik-lezen" && orderMap.has(b.id)
-        ? { ...b, order: orderMap.get(b.id)! }
+        ? { ...b, tbrOrder: orderMap.get(b.id)! }
         : b
     );
     updateBooks(nextBooks);
@@ -381,13 +384,13 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
 
     const nextBooks = books.map((b) =>
       b.status === "wil-ik-lezen" && orderMap.has(b.id)
-        ? { ...b, order: orderMap.get(b.id)! }
+        ? { ...b, tbrOrder: orderMap.get(b.id)! }
         : b
     );
     updateBooks(nextBooks);
     if (selectedBook?.id === bookId) {
       setEditingOrder("1");
-      setSelectedBook({ ...selectedBook, order: 1 });
+      setSelectedBook({ ...selectedBook, tbrOrder: 1 });
     }
   }
 
@@ -407,7 +410,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
 
     const nextBooks = books.map((b) =>
       b.status === "wil-ik-lezen" && orderMap.has(b.id)
-        ? { ...b, order: orderMap.get(b.id)! }
+        ? { ...b, tbrOrder: orderMap.get(b.id)! }
         : b
     );
     updateBooks(nextBooks);
@@ -1147,9 +1150,61 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                 )}
               </div>
 
-              <h2 className="mobile-section-heading">TBR</h2>
+              <div className="mobile-section-header-row">
+                <h2 className="mobile-section-heading">TBR</h2>
+                <div className="mobile-reading-search">
+                  {!tbrSearchOpen && (
+                    <button
+                      type="button"
+                      className="mobile-reading-search-toggle"
+                      onClick={() => setTbrSearchOpen(true)}
+                      aria-label="Zoeken in TBR"
+                    >
+                      🔍
+                    </button>
+                  )}
+                  {tbrSearchOpen && (
+                    <div className="mobile-reading-search-inner">
+                      <input
+                        type="text"
+                        value={tbrSearch}
+                        onChange={(e) => setTbrSearch(e.target.value)}
+                        placeholder="Zoek op titel..."
+                        className="mobile-reading-search-input"
+                      />
+                      {tbrSearch && (
+                        <button
+                          type="button"
+                          className="mobile-reading-search-clear"
+                          onClick={() => setTbrSearch("")}
+                          aria-label="Zoekterm wissen"
+                        >
+                          ×
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="mobile-reading-search-close"
+                        onClick={() => {
+                          setTbrSearchOpen(false);
+                          setTbrSearch("");
+                        }}
+                        aria-label="Zoeken sluiten"
+                      >
+                        Sluiten
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
               <div className="mobile-reading-list">
-                {getSortedTbrBooks().map((book) => {
+                {getSortedTbrBooks()
+                  .filter((book) =>
+                    tbrSearch.trim()
+                      ? book.title.toLowerCase().includes(tbrSearch.trim().toLowerCase())
+                      : true
+                  )
+                  .map((book) => {
                   const isSelected = selectedBookIds.has(book.id);
                   return (
                   <div
@@ -1330,7 +1385,53 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
 
           {mobileBooksSubTab === "gelezen" && (
             <>
-              <h2 className="mobile-section-heading">Uitgelezen</h2>
+              <div className="mobile-section-header-row">
+                <h2 className="mobile-section-heading">Uitgelezen</h2>
+                <div className="mobile-reading-search">
+                  {!readSearchOpen && (
+                    <button
+                      type="button"
+                      className="mobile-reading-search-toggle"
+                      onClick={() => setReadSearchOpen(true)}
+                      aria-label="Zoeken in uitgelezen boeken"
+                    >
+                      🔍
+                    </button>
+                  )}
+                  {readSearchOpen && (
+                    <div className="mobile-reading-search-inner">
+                      <input
+                        type="text"
+                        value={readSearch}
+                        onChange={(e) => setReadSearch(e.target.value)}
+                        placeholder="Zoek op titel..."
+                        className="mobile-reading-search-input"
+                      />
+                      {readSearch && (
+                        <button
+                          type="button"
+                          className="mobile-reading-search-clear"
+                          onClick={() => setReadSearch("")}
+                          aria-label="Zoekterm wissen"
+                        >
+                          ×
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="mobile-reading-search-close"
+                        onClick={() => {
+                          setReadSearchOpen(false);
+                          setReadSearch("");
+                        }}
+                        aria-label="Zoeken sluiten"
+                      >
+                        Sluiten
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
               <div className="mobile-reading-filters">
                 <div className="mobile-reading-filter">
                   <label className="mobile-reading-filter-label">Serie</label>
@@ -1364,10 +1465,16 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
               <div className="mobile-reading-list mobile-reading-list-simple">
                 {(() => {
                   const readBooks = books.filter((b) => b.status === "gelezen");
-                  const filtered =
+                  const filteredBySeries =
                     readSeriesFilter === "alle"
                       ? readBooks
                       : readBooks.filter((b) => b.seriesName === readSeriesFilter);
+                  const filtered =
+                    readSearch.trim().length > 0
+                      ? filteredBySeries.filter((b) =>
+                          b.title.toLowerCase().includes(readSearch.trim().toLowerCase())
+                        )
+                      : filteredBySeries;
                   const sorted = [...filtered].sort((a, b) => {
                     const aDate = a.finishedAt ? new Date(a.finishedAt).getTime() : 0;
                     const bDate = b.finishedAt ? new Date(b.finishedAt).getTime() : 0;

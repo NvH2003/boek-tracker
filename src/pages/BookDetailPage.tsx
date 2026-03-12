@@ -29,6 +29,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   const isModal = Boolean(modalBookId && onClose);
   const search = new URLSearchParams(location.search);
   const from = search.get("from");
+  const fromShelfId = search.get("shelfId");
 
   // Sync books tussen tabs/shells (web ↔ mobile)
   useEffect(() => {
@@ -101,6 +102,8 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
               onClose?.();
             } else if (from === "bibliotheek") {
               navigate(withBase(basePath, "/bibliotheek"));
+            } else if (from === "boekenkast" && fromShelfId) {
+              navigate(withBase(basePath, `/plank/${fromShelfId}`));
             } else {
               navigate(withBase(basePath, "/boeken"));
             }
@@ -189,6 +192,8 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       onClose?.();
     } else if (from === "bibliotheek") {
       navigate(withBase(basePath, "/bibliotheek"));
+    } else if (from === "boekenkast" && fromShelfId) {
+      navigate(withBase(basePath, `/plank/${fromShelfId}`));
     } else {
       navigate(withBase(basePath, "/boeken"));
     }
@@ -314,6 +319,50 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
             placeholder="Bijv. 467"
           />
         </div>
+        <div className="form-field book-detail-planks">
+          <span>Staat op boekenkast</span>
+          <div className="book-detail-plank-pills">
+            {bookPlanks.map((shelf) => (
+              <span key={shelf.id} className="plank-pill">
+                <Link to={withBase(basePath, `/plank/${shelf.id}`)} className="plank-pill-link">
+                  {shelf.name}
+                </Link>
+                <button
+                  type="button"
+                  className="plank-pill-remove"
+                  aria-label={`Verwijder van boekenkast ${shelf.name}`}
+                  onClick={() => removeBookFromPlank(shelf.id)}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {shelvesToAdd.length > 0 && (
+              <select
+                className="book-detail-add-plank-select"
+                value=""
+                onChange={(e) => {
+                  const shelfId = e.target.value;
+                  if (shelfId) {
+                    addBookToPlank(shelfId);
+                    e.target.value = "";
+                  }
+                }}
+                aria-label="Toevoegen aan boekenkast"
+              >
+                <option value="">+ Toevoegen aan boekenkast</option>
+                {shelvesToAdd.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          {bookPlanks.length === 0 && shelvesToAdd.length === 0 && (
+            <p className="book-detail-planks-hint">Geen eigen boekenkasten. Maak een boekenkast aan via Boekenkasten.</p>
+          )}
+        </div>
         <div className="form-field">
           <span>Serie naam (optioneel)</span>
           {!useCustomSeries && existingSeries.length > 0 ? (
@@ -370,50 +419,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
             placeholder={seriesName ? "Bijv. 1" : "Bijv. 1"}
             min="1"
           />
-        </div>
-        <div className="form-field book-detail-planks">
-          <span>Staat op boekenkast</span>
-          <div className="book-detail-plank-pills">
-            {bookPlanks.map((shelf) => (
-              <span key={shelf.id} className="plank-pill">
-                <Link to={withBase(basePath, `/plank/${shelf.id}`)} className="plank-pill-link">
-                  {shelf.name}
-                </Link>
-                <button
-                  type="button"
-                  className="plank-pill-remove"
-                  aria-label={`Verwijder van boekenkast ${shelf.name}`}
-                  onClick={() => removeBookFromPlank(shelf.id)}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            {shelvesToAdd.length > 0 && (
-              <select
-                className="book-detail-add-plank-select"
-                value=""
-                onChange={(e) => {
-                  const shelfId = e.target.value;
-                  if (shelfId) {
-                    addBookToPlank(shelfId);
-                    e.target.value = "";
-                  }
-                }}
-                aria-label="Toevoegen aan boekenkast"
-              >
-                <option value="">+ Toevoegen aan boekenkast</option>
-                {shelvesToAdd.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-          {bookPlanks.length === 0 && shelvesToAdd.length === 0 && (
-            <p className="book-detail-planks-hint">Geen eigen boekenkasten. Maak een boekenkast aan via Boekenkasten.</p>
-          )}
         </div>
         <div className="form-field">
           <span>Uitgelezen op</span>

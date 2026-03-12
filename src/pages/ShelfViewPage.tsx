@@ -37,8 +37,19 @@ function compareByRule(a: Book, b: Book, ruleId: string): number {
     case "serie": {
       const sa = (a.seriesName ?? "").trim();
       const sb = (b.seriesName ?? "").trim();
-      if (sa !== sb) return sa.localeCompare(sb);
-      return (a.seriesNumber ?? 0) - (b.seriesNumber ?? 0);
+      // Als beide een serie hebben: sorteer op serienaam en daarna nummer
+      if (sa && sb) {
+        if (sa !== sb) return sa.localeCompare(sb);
+        return (a.seriesNumber ?? 0) - (b.seriesNumber ?? 0);
+      }
+      // Eén met serie en één zonder: boeken met serie eerst
+      if (sa && !sb) return -1;
+      if (!sa && sb) return 1;
+      // Geen van beide heeft een serie: sorteer op 'volgorde' veld, dan titel
+      const orderA = a.order ?? 0;
+      const orderB = b.order ?? 0;
+      if (orderA !== orderB) return orderA - orderB;
+      return a.title.localeCompare(b.title);
     }
     case "auteur":
       return a.authors.localeCompare(b.authors);
@@ -114,17 +125,6 @@ export function ShelfViewPage() {
     return sortRulesByShelf[shelfId] ?? [];
   }, [sortRulesByShelf, shelfId]);
 
-  const currentGroupMode: ShelfGroupMode = useMemo(() => {
-    if (!shelfId) return "series";
-    return groupModeByShelf[shelfId] ?? "series";
-  }, [groupModeByShelf, shelfId]);
-
-  /** Op standaardboekenkasten geen groepering op status; toon dan als "none". */
-  const effectiveGroupMode: ShelfGroupMode = useMemo(
-    () => (!isCustomShelf && currentGroupMode === "status" ? "none" : currentGroupMode),
-    [isCustomShelf, currentGroupMode]
-  );
-
   const shelfBooks = useMemo(
     () => {
       const base = getBooksForShelf(shelf, books);
@@ -132,6 +132,24 @@ export function ShelfViewPage() {
     },
     [shelf, books, currentSortRules]
   );
+
+  const hasSeriesOnShelf = useMemo(
+    () => shelfBooks.some((b) => (b.seriesName ?? "").trim().length > 0),
+    [shelfBooks]
+  );
+
+  const currentGroupMode: ShelfGroupMode = useMemo(() => {
+    if (!shelfId) return "series";
+    return groupModeByShelf[shelfId] ?? "series";
+  }, [groupModeByShelf, shelfId]);
+
+  /** Op standaardboekenkasten geen groepering op status; toon dan als "none".
+   *  Als er geen series zijn op deze boekenkast, valt "series" terug naar "none". */
+  const effectiveGroupMode: ShelfGroupMode = useMemo(() => {
+    if (!isCustomShelf && currentGroupMode === "status") return "none";
+    if (!hasSeriesOnShelf && currentGroupMode === "series") return "none";
+    return currentGroupMode;
+  }, [isCustomShelf, currentGroupMode, hasSeriesOnShelf]);
 
   function setShelfSortRules(rules: string[]) {
     if (!shelfId) return;
@@ -344,7 +362,8 @@ export function ShelfViewPage() {
   }
 
   function goToBook(bookId: string) {
-    navigate(withBase(basePath, `/boek/${bookId}`));
+    const from = shelfId ? `?from=boekenkast&shelfId=${shelfId}` : "";
+    navigate(withBase(basePath, `/boek/${bookId}${from}`));
   }
 
   const groupedBySeries = useMemo(() => {
@@ -592,16 +611,18 @@ export function ShelfViewPage() {
                 >
                   Geen
                 </button>
-                <button
-                  type="button"
-                  className={`shelf-view-sort-pill ${effectiveGroupMode === "series" ? "active" : ""}`}
-                  onClick={() => {
-                    if (!shelfId) return;
-                    setGroupModeByShelf((prev) => ({ ...prev, [shelfId]: "series" }));
-                  }}
-                >
-                  Serie
-                </button>
+                {hasSeriesOnShelf && (
+                  <button
+                    type="button"
+                    className={`shelf-view-sort-pill ${effectiveGroupMode === "series" ? "active" : ""}`}
+                    onClick={() => {
+                      if (!shelfId) return;
+                      setGroupModeByShelf((prev) => ({ ...prev, [shelfId]: "series" }));
+                    }}
+                  >
+                    Serie
+                  </button>
+                )}
                 {isCustomShelf && (
                   <button
                     type="button"
