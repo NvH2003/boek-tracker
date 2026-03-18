@@ -563,6 +563,8 @@ select {
   max-height: 260px;
   overflow-y: auto;
   margin-top: 0.2rem;
+  width: 100%;
+  flex: 0 0 100%;
 }
 
 .search-result-card {
