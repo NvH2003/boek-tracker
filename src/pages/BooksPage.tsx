@@ -71,17 +71,34 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     return "alle" as const;
   })();
   const [books, setBooks] = useState<Book[]>(() => loadBooks());
+  const [searchTitle, setSearchTitle] = useState("");
+  const [searchAuthor, setSearchAuthor] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showAuthorSuggestions, setShowAuthorSuggestions] = useState(false);
   const [statusFilter, setStatusFilter] = useState<ReadStatus | "alle">(initialStatus);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const searchTitleInputRef = useRef<HTMLInputElement>(null);
+  const searchAuthorInputRef = useRef<HTMLInputElement>(null);
+  const authorSuggestionsContainerRef = useRef<HTMLDivElement>(null);
   const suggestionJustSelectedRef = useRef(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number>(-1);
+  const [activeAuthorSuggestionIndex, setActiveAuthorSuggestionIndex] = useState<number>(-1);
   const [isEnrichingTBR, setIsEnrichingTBR] = useState(false);
   const [searchError, setSearchError] = useState<string>("");
+
+  useEffect(() => {
+    if (!showAuthorSuggestions) return;
+    if (activeAuthorSuggestionIndex < 0) return;
+    const activeEl = authorSuggestionsContainerRef.current?.querySelector(".author-input-suggestion-item.active") as
+      | HTMLElement
+      | null;
+    activeEl?.scrollIntoView({ block: "nearest" });
+  }, [activeAuthorSuggestionIndex, showAuthorSuggestions]);
   const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
   const challenge = useMemo(() => loadChallenge(), []);
   const [showManualBookModal, setShowManualBookModal] = useState(false);
@@ -121,6 +138,29 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "nl-NL"));
   }, [books]);
 
+  const topAuthors = useMemo(() => {
+    const counts = new Map<string, number>();
+    books.forEach((b) => {
+      if (!b.authors) return;
+      b.authors
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .forEach((name) => {
+          counts.set(name, (counts.get(name) ?? 0) + 1);
+        });
+    });
+
+    return Array.from(counts.entries())
+      .sort((a, b) => {
+        // Most used first, then alphabetical.
+        if (b[1] !== a[1]) return b[1] - a[1];
+        return a[0].localeCompare(b[0], "nl-NL");
+      })
+      .map(([name]) => name)
+      .slice(0, 8);
+  }, [books]);
+
   const existingSeries = useMemo(() => {
     const set = new Set<string>();
     books.forEach((b) => {
@@ -128,6 +168,59 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     });
     return Array.from(set).sort();
   }, [books]);
+  const existingSeriesNorm = useMemo(() => {
+    const m = new Map<string, string>();
+    existingSeries.forEach((name) => {
+      m.set(
+        name
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .trim(),
+        name
+      );
+    });
+    return m;
+  }, [existingSeries]);
+
+  const authorInputSuggestions = useMemo(() => {
+    const trimmed = searchAuthor.trim();
+    if (!trimmed) {
+      // Always show alphabetically (not by "most used").
+      return showAuthorSuggestions ? existingAuthors.slice(0, 6) : [];
+    }
+
+    const tokens = trimmed.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return [];
+    const activeToken = tokens[tokens.length - 1];
+    if (activeToken.length < 3) return [];
+
+    const activeNorm = normalizeForMatch(activeToken);
+    if (!activeNorm) return [];
+
+    // Als de auteur al exact (case-insensitive) overeenkomt met een bekende auteur,
+    // dan tonen we geen suggesties.
+    const exact = existingAuthors.find(
+      (a) => normalizeForMatch(a) === normalizeForMatch(trimmed)
+    );
+    if (exact) return [];
+
+    // Keep the alphabetic order from `existingAuthors`.
+    const matches = existingAuthors
+      .filter((name) => normalizeForMatch(name).includes(activeNorm))
+      .slice(0, 6);
+
+    return matches;
+  }, [searchAuthor, showAuthorSuggestions, existingAuthors]);
+
+  const existingAuthorsByNormLengthDesc = useMemo(() => {
+    const arr = [...existingAuthors];
+    // Langste eerst: maakt matching op suffix realistischer (bv. "Lucinda Riley" boven "Riley").
+    arr.sort(
+      (a, b) => normalizeForMatch(b).length - normalizeForMatch(a).length
+    );
+    return arr;
+  }, [existingAuthors]);
 
   const manualSelectedShelves = useMemo(
     () =>
@@ -176,6 +269,24 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       // ignore
     }
   }, []);
+
+  // Sync the two search fields (title + author) into the existing searchTerm/searchByAuthor model.
+  useEffect(() => {
+    const t = searchTitle.trim();
+    const a = searchAuthor.trim();
+    if (!t && a) {
+      setSearchByAuthor(true);
+      setSearchTerm(a);
+      return;
+    }
+    if (t) {
+      setSearchByAuthor(false);
+      setSearchTerm(a ? `${t} - ${a}` : t);
+      return;
+    }
+    setSearchByAuthor(false);
+    setSearchTerm("");
+  }, [searchTitle, searchAuthor]);
 
   function sortBooksBySeries(books: Book[]): Book[] {
     return [...books].sort((a, b) => {
@@ -291,7 +402,30 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     const byId = books.find((b) => b.id === result.id);
     if (byId) return byId;
 
-    // 2) Fallback: match op titel + auteurs (case-insensitive, getrimd)
+    // 2) Canonical series key match:
+    // API-titels bevatten vaak "Serie - Deel" terwijl onze boeken losse `seriesName` en `title` hebben.
+    const split = splitSeriesFromTitle(result.title);
+    const resultAuthors = (result.authors ?? "").trim().toLowerCase();
+    const resultTitleNorm = normalizeForMatch(split.title);
+    const resultSeriesNorm = split.seriesName ? normalizeForMatch(split.seriesName) : "";
+
+    const bySeriesKey = books.find((b) => {
+      const bAuthors = (b.authors ?? "").trim().toLowerCase();
+      if (bAuthors !== resultAuthors) return false;
+
+      // Als we een serienaam konden afleiden, gebruik die; anders vallen we terug naar title match.
+      if (resultSeriesNorm && b.seriesName) {
+        return (
+          normalizeForMatch(b.seriesName) === resultSeriesNorm &&
+          normalizeForMatch(b.title) === resultTitleNorm
+        );
+      }
+
+      return normalizeForMatch(b.title) === resultTitleNorm;
+    });
+    if (bySeriesKey) return bySeriesKey;
+
+    // 3) Fallback: match op titel + auteurs (case-insensitive, getrimd)
     const title = result.title.trim().toLowerCase();
     const authors = result.authors.trim().toLowerCase();
     return books.find(
@@ -351,6 +485,315 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     scheduleCacheSave();
   }
 
+  function normalizeForMatch(input: string): string {
+    return input
+      .toLowerCase()
+      .normalize("NFD")
+      // strip diacritics
+      .replace(/[\u0300-\u036f]/g, "")
+      // normalize punctuation to spaces
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function normalizeSeriesPartTitleCase(partTitle: string): string {
+    const norm = normalizeForMatch(partTitle);
+    if (norm === "storm") return "Storm";
+    if (norm === "maan") return "Maan";
+    if (norm === "zon") return "Zon";
+    return partTitle;
+  }
+
+  function toTitleCase(input: string): string {
+    const trimmed = input.trim();
+    if (!trimmed) return trimmed;
+
+    // Support multiple authors separated by commas.
+    const parts = trimmed.split(",").map((p) => p.trim()).filter(Boolean);
+    const titleCasedParts = parts.map((p) => {
+      return p
+        .split(/\s+/)
+        .map((word) => {
+          if (!word) return word;
+          const lower = word.toLowerCase();
+          // Keep fully-uppercase words as-is (e.g. "YA", acronyms)
+          if (word === word.toUpperCase() && word.replace(/[^A-Z]/g, "").length >= 2) {
+            return word;
+          }
+          // Capitalize first letter, keep the rest lowercase
+          return lower.charAt(0).toUpperCase() + lower.slice(1);
+        })
+        .join(" ");
+    });
+
+    // Preserve comma spacing in a normalized way
+    return titleCasedParts.join(", ");
+  }
+
+  function mapToOpenLibraryLanguageCodes(raw?: string): string[] | undefined {
+    if (!raw) return undefined;
+    // iTunes/Google/OpenLibrary gebruiken soms verschillende taalstrings:
+    // - afkortingen (nl/en/de/fr)
+    // - samengestelde codes (nl-NL)
+    // - volledige namen ("dutch", "english", ...)
+    // Normalize eerst (case/diacritics) en neem daarna het eerste token.
+    const normalized = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const base = normalized.split(/[-_]/)[0].trim();
+    if (!base) return undefined;
+    const map: Record<string, string> = {
+      nl: "dut",
+      dut: "dut",
+      nld: "dut",
+      dutch: "dut",
+      nederlands: "dut",
+      en: "eng",
+      eng: "eng",
+      english: "eng",
+      de: "ger",
+      ger: "ger",
+      german: "ger",
+      deutsch: "ger",
+      fr: "fre",
+      fre: "fre",
+      french: "fre",
+      francais: "fre",
+    };
+    const code = map[base];
+    return code ? [code] : undefined;
+  }
+
+  function splitQuery(query: string): { raw: string; titlePart: string; authorPart: string } {
+    const raw = query.trim();
+    // common patterns: "Title - Author", "Title — Author", "Title by Author"
+    const m =
+      raw.match(/^(.*?)\s*[-—–]\s*(.+)$/) ||
+      raw.match(/^(.*?)\s+by\s+(.+)$/i);
+    if (m) {
+      return { raw, titlePart: m[1].trim(), authorPart: m[2].trim() };
+    }
+
+    // Heuristiek: als query eindigt op (een deel van) een auteur uit je eigen bibliotheek,
+    // splits dan titel/auteur zelfs als er geen '-' staat.
+    const qNorm = normalizeForMatch(raw);
+    if (qNorm && existingAuthorsByNormLengthDesc.length > 0) {
+      for (const author of existingAuthorsByNormLengthDesc) {
+        const aNorm = normalizeForMatch(author);
+        if (!aNorm) continue;
+        // Match op genormaliseerde suffix, zodat "storm lucinda riley" werkt.
+        if (qNorm.endsWith(aNorm) && qNorm.length > aNorm.length + 1) {
+          const titlePartNorm = qNorm.slice(0, qNorm.length - aNorm.length).trim();
+          if (titlePartNorm) {
+            return { raw, titlePart: titlePartNorm, authorPart: author };
+          }
+        }
+      }
+
+      // Fallback: alleen achternaam getypt (bv. "Storm Riley")
+      const parts = qNorm.split(" ").filter(Boolean);
+      const lastToken = parts.length > 0 ? parts[parts.length - 1] : "";
+      if (lastToken) {
+        const candidates = existingAuthorsByNormLengthDesc.filter((author) => {
+          const aNorm = normalizeForMatch(author);
+          return aNorm.endsWith(lastToken);
+        });
+        if (candidates.length > 0) {
+          const best = candidates[0];
+          const bestNorm = normalizeForMatch(best);
+          if (qNorm.endsWith(bestNorm) && qNorm.length > bestNorm.length + 1) {
+            const titlePartNorm = qNorm.slice(0, qNorm.length - bestNorm.length).trim();
+            if (titlePartNorm) {
+              return { raw, titlePart: titlePartNorm, authorPart: best };
+            }
+          } else {
+            // Als we niet exact op volledige auteur suffix matchen, nemen we toch de
+            // rest als titel (op tokenbasis).
+            const titlePartNorm = parts.slice(0, -1).join(" ").trim();
+            if (titlePartNorm) {
+              return { raw, titlePart: titlePartNorm, authorPart: best };
+            }
+          }
+        }
+      }
+    }
+
+    return { raw, titlePart: raw, authorPart: "" };
+  }
+
+  function resultDedupeKey(r: SearchResult): string {
+    // Use normalized title+authors for cross-source dedupe
+    return `${normalizeForMatch(r.title)}|${normalizeForMatch(r.authors ?? "")}`;
+  }
+
+  function scoreResult(queryNorm: string, titleNorm: string, authorsNorm: string): number {
+    if (!queryNorm) return 0;
+    let score = 0;
+
+    // Strong signals
+    if (titleNorm === queryNorm) score += 250;
+    if (authorsNorm === queryNorm) score += 80;
+
+    // Starts-with is usually very relevant for book search
+    if (titleNorm.startsWith(queryNorm)) score += 160;
+    if (authorsNorm.startsWith(queryNorm)) score += 40;
+
+    // Substring match
+    if (titleNorm.includes(queryNorm)) score += 90;
+    if (authorsNorm.includes(queryNorm)) score += 30;
+
+    // Token coverage: reward matching multiple tokens in title/authors
+    const tokens = queryNorm.split(" ").filter((t) => t.length >= 2);
+    if (tokens.length > 0) {
+      let matched = 0;
+      for (const t of tokens) {
+        if (titleNorm.includes(t) || authorsNorm.includes(t)) matched += 1;
+      }
+      score += Math.round((matched / tokens.length) * 70);
+    }
+
+    // Minor boosts for richer results
+    // (keeps results with covers/pageCount a bit higher when relevance is similar)
+    return score;
+  }
+
+  function mergeDedupeAndRank(query: string, lists: SearchResult[][], maxResults: number): SearchResult[] {
+    const qNorm = normalizeForMatch(query);
+    const { titlePart, authorPart } = splitQuery(query);
+    const titlePartNorm = normalizeForMatch(titlePart);
+    const authorPartNorm = normalizeForMatch(authorPart);
+
+    const tokensAll = qNorm.split(" ").filter((t) => t.length >= 2);
+    const titlePartTokens = titlePartNorm ? titlePartNorm.split(" ").filter((t) => t.length >= 2) : [];
+    const authorPartTokens = authorPartNorm ? authorPartNorm.split(" ").filter((t) => t.length >= 2) : [];
+
+    const singleWordQuery = qNorm.split(" ").length === 1;
+    const libraryTitleSet = new Set(books.map((b) => normalizeForMatch(b.title)));
+    const map = new Map<string, SearchResult>();
+    for (const list of lists) {
+      for (const r of list) {
+        const key = resultDedupeKey(r);
+        if (!map.has(key)) {
+          map.set(key, r);
+          continue;
+        }
+        // Prefer the "richer" version of a duplicate
+        const prev = map.get(key)!;
+        const prevScore =
+          (prev.coverUrl ? 2 : 0) +
+          (typeof prev.pageCount === "number" ? 1 : 0) +
+          (prev.description ? 1 : 0);
+        const nextScore =
+          (r.coverUrl ? 2 : 0) +
+          (typeof r.pageCount === "number" ? 1 : 0) +
+          (r.description ? 1 : 0);
+        if (nextScore > prevScore) map.set(key, r);
+      }
+    }
+
+    const ranked = Array.from(map.values())
+      .map((r) => {
+        const split = splitSeriesFromTitle(r.title);
+        const partTitleNorm = normalizeForMatch(split.title);
+        const titleNorm = normalizeForMatch(r.title);
+        const authorsNorm = normalizeForMatch(r.authors ?? "");
+
+        // Basis: traditionele score op volledige query + titel/authors
+        let relevance = scoreResult(qNorm, titleNorm, authorsNorm);
+
+        // Deel/titel scoring: match op de "deelnaam" (right side) als we die kunnen afleiden.
+        if (titlePartTokens.length > 0) {
+          const exact = partTitleNorm === titlePartNorm;
+          const starts = partTitleNorm.startsWith(titlePartNorm);
+          const contains = partTitleNorm.includes(titlePartNorm);
+
+          if (exact) relevance += 320;
+          else if (starts) relevance += 220;
+          else if (contains) relevance += 140;
+
+          // Token coverage voor deelnaam (bv. "maan")
+          const matchedTitleTokens = titlePartTokens.reduce((acc, t) => {
+            return acc + (partTitleNorm.includes(t) ? 1 : 0);
+          }, 0);
+          if (titlePartTokens.length > 0) {
+            relevance += Math.round((matchedTitleTokens / titlePartTokens.length) * 120);
+          }
+        }
+
+        // Auteur scoring: match op auteur tokens als gebruiker auteur opgeeft
+        if (authorPartTokens.length > 0) {
+          const exactAuthor = authorsNorm === authorPartNorm;
+          const startsAuthor = authorsNorm.startsWith(authorPartNorm);
+          const containsAuthor = authorsNorm.includes(authorPartNorm);
+          if (exactAuthor) relevance += 160;
+          else if (startsAuthor) relevance += 110;
+          else if (containsAuthor) relevance += 70;
+
+          const matchedAuthorTokens = authorPartTokens.reduce((acc, t) => {
+            return acc + (authorsNorm.includes(t) ? 1 : 0);
+          }, 0);
+          if (authorPartTokens.length > 0) {
+            relevance += Math.round((matchedAuthorTokens / authorPartTokens.length) * 90);
+          }
+        }
+
+        // Fallback: als er geen duidelijke authorPart is, reward coverage op titel/authors tokens
+        if (tokensAll.length >= 2 && authorPartTokens.length === 0) {
+          const matchedInTitle = tokensAll.reduce((acc, t) => acc + (partTitleNorm.includes(t) ? 1 : 0), 0);
+          const matchedInAuthors = tokensAll.reduce((acc, t) => acc + (authorsNorm.includes(t) ? 1 : 0), 0);
+          relevance += matchedInTitle * 18;
+          relevance += matchedInAuthors * 10;
+          if (matchedInTitle > 0 && matchedInAuthors > 0) relevance += 90;
+        }
+
+        // Extra boost als we een bekende serie herkennen en de deelnaam matcht sterk.
+        if (split.seriesName) {
+          const splitSeriesNorm = normalizeForMatch(split.seriesName);
+          if (existingSeriesNorm.has(splitSeriesNorm)) {
+            relevance += 40;
+            if (titlePartTokens.length > 0) {
+              const matchedAllTokens = titlePartTokens.every((t) => partTitleNorm.includes(t));
+              if (matchedAllTokens) relevance += 120;
+            }
+          }
+        }
+
+        // Taal-boost (geen filter): als we taalmetadata hebben, promoten we NL boven ENG/DE.
+        const langs = r.languageCodes ?? [];
+        if (langs.includes("dut")) relevance += 200;
+        else if (langs.includes("eng")) relevance += 90;
+        else if (langs.includes("ger")) relevance += 60;
+
+        // Straf niet doeltalen wanneer taalmetadata beschikbaar is.
+        if (langs.length > 0 && !langs.some((c) => c === "dut" || c === "eng" || c === "ger")) {
+          relevance -= 220;
+        }
+
+        // Boost resultaten die qua titel overeenkomen met een boek uit de eigen bibliotheek.
+        if (libraryTitleSet.has(partTitleNorm)) {
+          relevance += 80;
+        }
+
+        // Bij hele korte/algemene queries (zoals "Storm") lichte voorkeur voor NL resultaten.
+        if (
+          singleWordQuery &&
+          Array.isArray(r.languageCodes) &&
+          r.languageCodes.some((c) => c === "dut" || c === "nld" || c === "nl")
+        ) {
+          relevance += 50;
+        }
+
+        const richness =
+          (r.coverUrl ? 8 : 0) +
+          (typeof r.pageCount === "number" ? 3 : 0) +
+          (r.description ? 2 : 0);
+        return { r, sortScore: relevance * 10 + richness };
+      })
+      .sort((a, b) => b.sortScore - a.sortScore)
+      .map((x) => x.r);
+
+    return ranked.slice(0, maxResults);
+  }
+
   function normalizeDescription(description?: string): string {
     if (!description) return "";
     // iTunes levert vaak HTML; maak dit leesbaar als plain text.
@@ -369,6 +812,249 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
 
   function openSearchResult(result: SearchResult) {
     setSelectedSearchResult(result);
+  }
+
+  function getResultSourceLabel(result: SearchResult): string {
+    if (result.id.startsWith("itunes:")) return "Apple Books";
+    if (result.id.startsWith("openlib:")) return "Open Library";
+    return "Google Books";
+  }
+
+  function getLanguageBadges(result: SearchResult): string[] {
+    // Primary: infer from the summary/description text (what you use to choose the correct edition).
+    const inferred = inferLanguageLabelsFromDescription(result.description);
+    if (inferred.length > 0) return inferred;
+
+    // Secondary: fall back to provider metadata.
+    const codes = Array.isArray(result.languageCodes) ? result.languageCodes : [];
+    const set = new Set<string>();
+    const norm = codes.map((c) => (typeof c === "string" ? c.toLowerCase() : "")).filter(Boolean);
+
+    if (norm.includes("dut") || norm.includes("nld") || norm.includes("nl")) set.add("NL");
+    if (norm.includes("eng") || norm.includes("en")) set.add("EN");
+    if (norm.includes("ger") || norm.includes("de")) set.add("DE");
+    if (norm.includes("fre") || norm.includes("fr")) set.add("FR");
+
+    return Array.from(set);
+  }
+
+  function stripHtml(input: string): string {
+    return input
+      .replace(/<br\s*\/?>/gi, " ")
+      .replace(/<\/p>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function inferLanguageLabelsFromDescription(description?: string): string[] {
+    if (!description) return [];
+    const text = stripHtml(description).toLowerCase();
+    if (!text) return [];
+
+    // Lightweight heuristic: compare counts of language-specific “signals”.
+    // Belangrijk: we willen vooral voorkomen dat Zweeds als NL wordt gezien.
+    // Daarom gebruiken we boek-/auteur-specifieke termen i.p.v. algemene woorden.
+    const hasSwedishDiacritics = /[åäö]/.test(text);
+
+    const svSignals: RegExp[] = [
+      /\b(och|att|för|inte|på|från|till|över|under|med|utgivare)\b/g,
+      /\b(bok|kapitel|författare|stormsystem)\b/g
+    ];
+
+    const nlSignals: RegExp[] = [
+      /\b(het|een|van|voor|door|bij|maar|ook|naar|waar|wordt|komt|blijft)\b/g,
+      /\b(roman|verhaal|reeks|deel|uitgever|auteur|hoofdstuk|geschiedenis)\b/g,
+      /\b(ij|schrijver)\b/g
+    ];
+
+    const enSignals: RegExp[] = [
+      /\b(the|and|with|for|from|about|into|over|after|before|without|between)\b/g,
+      /\b(novel|story|series|volume|chapter|author|published)\b/g
+    ];
+
+    const minLen = 25; // te kort = te weinig bewijs
+    if (text.length < minLen) return [];
+
+    const countMatches = (reArr: RegExp[], str: string) => {
+      let total = 0;
+      for (const re of reArr) {
+        const m = str.match(re);
+        total += m ? m.length : 0;
+      }
+      return total;
+    };
+
+    const nlScore = countMatches(nlSignals, text);
+    const enScore = countMatches(enSignals, text);
+    const svScore = countMatches(svSignals, text) + (hasSwedishDiacritics ? 6 : 0);
+
+    const best = Math.max(nlScore, enScore, svScore);
+    if (best === 0) return [];
+
+    // Avoid ties/weak evidence: if best is only slightly better, don't guess.
+    const sorted = [nlScore, enScore, svScore].sort((a, b) => b - a);
+    const second = sorted[1] ?? 0;
+    const diff = best - second;
+    const minDiff = 2;
+    const minBest = 3;
+    if (best < minBest) return [];
+    if (diff < minDiff) return [];
+
+    if (svScore === best) return ["SV"];
+    if (nlScore === best) return ["NL"];
+    return ["EN"];
+  }
+
+  function getLanguageLabel(result: SearchResult): string | null {
+    const langs = getLanguageBadges(result);
+    if (langs.length === 0) return null;
+    if (langs.length === 1) return `Taal: ${langs[0]}`;
+    return `Talen: ${langs.join("/")}`;
+  }
+
+  function resultMatchesAuthorFilter(result: SearchResult, authorPartRaw: string): boolean {
+    const input = authorPartRaw.trim();
+    if (!input) return true;
+
+    const inputNorm = normalizeForMatch(input);
+    if (!inputNorm) return true;
+
+    const resultAuthors = (result.authors ?? "").trim();
+    const resultNorm = normalizeForMatch(resultAuthors);
+    if (!resultNorm) return false;
+
+    if (resultNorm === inputNorm) return true;
+    if (resultNorm.includes(inputNorm)) return true;
+
+    const inputTokens = inputNorm.split(" ").filter(Boolean);
+    if (inputTokens.length === 1) {
+      return resultNorm.includes(inputTokens[0]);
+    }
+
+    // Token-based match, order independent (helps with "Lucinda Riley" vs "Riley, Lucinda").
+    return inputTokens.every((t) => resultNorm.includes(t));
+  }
+
+  function getQueryHighlightToken(
+    query: string,
+    title: string,
+    authors: string
+  ): string | null {
+    const qNorm = normalizeForMatch(query);
+    if (!qNorm) return null;
+    const tokens = qNorm.split(" ").filter((t) => t.length >= 3);
+    if (tokens.length === 0) return null;
+    const titleNorm = normalizeForMatch(title);
+    const authorsNorm = normalizeForMatch(authors);
+    const missingFromTitle = tokens.filter((t) => !titleNorm.includes(t));
+    if (missingFromTitle.length === 0) return null;
+    // Toon één representatieve token (zoals "maan") als hint
+    return missingFromTitle[0];
+  }
+
+  function escapeRegex(input: string): string {
+    return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function getTokenFromQueryOriginalCase(query: string, tokenLower: string): string | null {
+    if (!query || !tokenLower) return null;
+    const re = new RegExp(`\\b${escapeRegex(tokenLower)}\\b`, "i");
+    const m = query.match(re);
+    return m && typeof m[0] === "string" ? m[0].trim() : null;
+  }
+
+  function splitSeriesFromTitle(
+    rawTitle: string
+  ): { title: string; seriesName?: string } {
+    const base = rawTitle.trim();
+    if (!base) return { title: rawTitle };
+
+    // 1) Sterke herkenning: bekende serienaam aan het begin, gevolgd door een delimiter.
+    // Voorbeelden:
+    // - "De zeven zussen - Maan"
+    // - "De zeven zussen: Maan"
+    // - "De zeven zussen (Maan)"
+    for (const seriesName of existingSeries) {
+      if (!seriesName) continue;
+      const esc = escapeRegex(seriesName);
+      const dashRe = new RegExp(`^${esc}\\s*[\\-–—:]\\s*(.+)$`, "i");
+      const parenRe = new RegExp(`^${esc}\\s*[\\(\\[]\\s*(.+?)\\s*[\\)\\]]$`, "i");
+
+      const mDash = base.match(dashRe);
+      if (mDash && typeof mDash[1] === "string") {
+        const right = mDash[1].trim();
+        const rightWords = right.split(/\s+/).filter(Boolean).length;
+        if (right && rightWords <= 6) {
+          return { title: normalizeSeriesPartTitleCase(right), seriesName };
+        }
+      }
+
+      const mParen = base.match(parenRe);
+      if (mParen && typeof mParen[1] === "string") {
+        const right = mParen[1].trim();
+        if (right) {
+          return { title: normalizeSeriesPartTitleCase(right), seriesName };
+        }
+      }
+    }
+
+    // 2) Fallback: separator heuristiek (ook zonder spaties rond de delimiter)
+    const separators = [" – ", " — ", " - ", ": ", "–", "—", "-", ":"];
+    for (const sep of separators) {
+      const idx = base.indexOf(sep);
+      if (idx <= 0 || idx >= base.length - sep.length) continue;
+      const left = base.slice(0, idx).trim();
+      const right = base.slice(idx + sep.length).trim();
+      if (!right) continue;
+
+      const leftNorm = left
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+
+      // 1) Als de linkerkant al als serie in de bibliotheek bestaat → gebruik die.
+      const existing = existingSeriesNorm.get(leftNorm);
+      if (existing) {
+        return { title: normalizeSeriesPartTitleCase(right), seriesName: existing };
+      }
+
+      // 2) Generieke heuristiek: linkerkant lijkt een serienaam (meerdere woorden),
+      // rechterkant is korter (deelnaam), en ze zijn niet gelijk.
+      const leftWords = left.split(/\s+/).length;
+      const rightWords = right.split(/\s+/).length;
+      if (
+        leftWords >= 2 &&
+        rightWords <= 4 &&
+        !right.toLowerCase().startsWith(left.toLowerCase())
+      ) {
+        return { title: normalizeSeriesPartTitleCase(right), seriesName: left };
+      }
+    }
+
+    return { title: rawTitle };
+  }
+
+  function getExistingBookShelfNames(existingBook: Book | undefined): string[] {
+    if (!existingBook) return [];
+    const names = new Set<string>();
+
+    (existingBook.shelfIds ?? []).forEach((id) => {
+      const shelfName = shelves.find((s) => s.id === id)?.name;
+      if (shelfName) names.add(shelfName);
+    });
+
+    // Als het een standaard status-shelf is, wordt shelfIds vaak niet gezet; toon dan de status-shelf.
+    const systemShelfId = Object.entries(STATUS_BY_SHELF_ID).find(
+      ([, status]) => status === existingBook.status
+    )?.[0];
+    if (systemShelfId) {
+      const shelfName = shelves.find((s) => s.id === systemShelfId)?.name ?? systemShelfId;
+      names.add(shelfName);
+    }
+
+    return Array.from(names);
   }
 
   const showSearch = mode !== "library";
@@ -395,7 +1081,9 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     maxResults: number,
     controller: AbortController
   ): Promise<SearchResult[]> {
-    const url = new URL(ITUNES_SEARCH_API);
+    // Gebruik land-specifieke iTunes endpoint om betere taal/edities terug te krijgen.
+    const countryPath = ITUNES_COUNTRY.trim().toLowerCase();
+    const url = new URL(`https://itunes.apple.com/${countryPath}/search`);
     url.searchParams.set("term", query);
     url.searchParams.set("country", ITUNES_COUNTRY);
     url.searchParams.set("media", "ebook");
@@ -430,6 +1118,9 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
         authors,
         coverUrl: coverUrl?.replace("http://", "https://"),
         description
+        ,
+        // Best effort: iTunes language is usually a short code like "nl" / "en"
+        languageCodes: mapToOpenLibraryLanguageCodes(item?.language)
       };
     });
 
@@ -440,6 +1131,10 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     const url = new URL(OPEN_LIBRARY_SEARCH_API);
     url.searchParams.set("q", query);
     url.searchParams.set("limit", String(maxResults));
+    url.searchParams.set(
+      "fields",
+      "key,title,subtitle,author_name,cover_i,number_of_pages_median,language"
+    );
 
     const res = await fetch(url.toString(), { signal: controller.signal });
     if (!res.ok) {
@@ -450,22 +1145,38 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     const results: SearchResult[] = docs.map((doc) => {
       const key = typeof doc?.key === "string" ? doc.key : "";
       const id = key ? `openlib:${key}` : `openlib:doc:${Math.random().toString(36).slice(2)}`;
-      const coverId =
-        typeof doc?.cover_i === "number" ? doc.cover_i : undefined;
+      const coverId = typeof doc?.cover_i === "number" ? doc.cover_i : undefined;
       const coverUrl = coverId
         ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg`
         : undefined;
-      const authors = Array.isArray(doc?.author_name) ? doc.author_name.join(", ") : "Onbekende auteur";
+      const baseTitle = doc?.title ?? "Onbekende titel";
+      const sub = typeof doc?.subtitle === "string" ? doc.subtitle.trim() : "";
+      const combinedTitle =
+        sub && !sub.toLowerCase().startsWith(baseTitle.toLowerCase())
+          ? `${baseTitle} – ${sub}`
+          : baseTitle;
+      const authors = Array.isArray(doc?.author_name)
+        ? doc.author_name.join(", ")
+        : "Onbekende auteur";
       const pageCount =
         typeof doc?.number_of_pages_median === "number"
           ? doc.number_of_pages_median
           : undefined;
+      const rawLang = doc?.language;
+      const languageCodes = Array.isArray(rawLang)
+        ? (rawLang as any[])
+            .map((x) =>
+              typeof x === "string" ? x : x?.key?.replace(/^\/languages\//, "") || null
+            )
+            .filter((c): c is string => !!c)
+        : undefined;
       return {
         id,
-        title: doc?.title ?? "Onbekende titel",
+        title: combinedTitle,
         authors,
         coverUrl,
-        pageCount
+        pageCount,
+        languageCodes
       };
     });
     return results;
@@ -500,7 +1211,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   }
 
   async function searchBooks(query: string, isSuggestion = false) {
-    if (!query.trim()) {
+    const { raw, titlePart, authorPart } = splitQuery(query);
+    if (!raw.trim()) {
       if (isSuggestion) {
         setSuggestions([]);
       } else {
@@ -523,132 +1235,216 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
         resultsAbortRef.current = controller;
       }
 
-      // Suggesties: Apple Books (gratis, veel dekking) → fallback Open Library
+      // Suggesties: combineer Apple Books + Open Library en rank lokaal (betere kwaliteit).
       if (isSuggestion) {
-        const itunesKey = cacheKey(query, maxResults, "itunes");
+        const itunesKey = cacheKey(raw, 20, "itunes");
+        const openKey = cacheKey(raw, 20, "openlibrary");
         const cachedItunes = readCache(itunesKey);
-        if (cachedItunes) {
-          setSuggestions(cachedItunes);
-          return;
-        }
+        const cachedOpen = readCache(openKey);
 
-        try {
-          const itunesResults = await searchItunesBooks(query, maxResults, controller);
-          writeCache(itunesKey, itunesResults);
-          if (itunesResults.length > 0) {
-            setSuggestions(itunesResults);
+        const itunesPromise = cachedItunes
+          ? Promise.resolve(cachedItunes)
+          : searchItunesBooks(raw, 20, controller).then((r) => {
+              writeCache(itunesKey, r);
+              return r;
+            });
+        const openPromise = cachedOpen
+          ? Promise.resolve(cachedOpen)
+          : searchOpenLibrary(raw, 20, controller).then((r) => {
+              writeCache(openKey, r);
+              return r;
+            });
+
+        const [itunesResults, openResults] = await Promise.allSettled([itunesPromise, openPromise]).then(
+          (settled) =>
+            settled.map((s) => (s.status === "fulfilled" ? s.value : [] as SearchResult[])) as [
+              SearchResult[],
+              SearchResult[]
+            ]
+        );
+
+        const combined = mergeDedupeAndRank(raw, [itunesResults, openResults], maxResults);
+        if (combined.length === 0 && titlePart && authorPart) {
+          // Fallback: zoek op auteur-only als titel (of spelling) te strikt/vaag is.
+          const authorOnly = authorPart.trim();
+          if (authorOnly) {
+            const itunesKey2 = cacheKey(authorOnly, 20, "itunes");
+            const openKey2 = cacheKey(authorOnly, 20, "openlibrary");
+            const cachedItunes2 = readCache(itunesKey2);
+            const cachedOpen2 = readCache(openKey2);
+
+            const itunesPromise2 = cachedItunes2
+              ? Promise.resolve(cachedItunes2)
+              : searchItunesBooks(authorOnly, 20, controller).then((r) => {
+                  writeCache(itunesKey2, r);
+                  return r;
+                });
+            const openPromise2 = cachedOpen2
+              ? Promise.resolve(cachedOpen2)
+              : searchOpenLibrary(authorOnly, 20, controller).then((r) => {
+                  writeCache(openKey2, r);
+                  return r;
+                });
+
+            const [itunesResults2, openResults2] = await Promise.allSettled([itunesPromise2, openPromise2]).then(
+              (settled) =>
+                settled.map((s) => (s.status === "fulfilled" ? s.value : [] as SearchResult[])) as [
+                  SearchResult[],
+                  SearchResult[]
+                ]
+            );
+
+            const combined2 = mergeDedupeAndRank(raw, [itunesResults2, openResults2], maxResults);
+            const filtered2 =
+              authorPart.trim().length > 0 ? combined2.filter((r) => resultMatchesAuthorFilter(r, authorPart)) : combined2;
+            setSuggestions(filtered2);
             return;
           }
-        } catch {
-          // ignore and fallback
         }
 
-        const openKey = cacheKey(query, maxResults, "openlibrary");
-        const cachedOpen = readCache(openKey);
-        const openResults = cachedOpen ?? (await searchOpenLibrary(query, maxResults, controller));
-        if (!cachedOpen) writeCache(openKey, openResults);
-        setSuggestions(openResults);
+        const filtered =
+          authorPart.trim().length > 0 ? combined.filter((r) => resultMatchesAuthorFilter(r, authorPart)) : combined;
+        setSuggestions(filtered);
         return;
       }
 
       // Als Google tijdelijk is uitgeschakeld (quota), ga direct naar Open Library
       const googleAllowed = canUseGoogleNow();
 
-      const url = new URL(GOOGLE_BOOKS_API);
-      url.searchParams.set("q", query);
-      url.searchParams.set("maxResults", String(maxResults));
-      if (GOOGLE_BOOKS_API_KEY && GOOGLE_BOOKS_API_KEY.trim()) {
-        url.searchParams.set("key", GOOGLE_BOOKS_API_KEY.trim());
-      }
+      // We vragen meer op per bron en ranken daarna lokaal terug naar maxResults.
+      const perSourceLimit = isSuggestion ? 10 : 30;
 
-      // Google route (alleen als toegestaan)
-      if (googleAllowed) {
-        const googleKey = cacheKey(query, maxResults, "google");
+      // Build Google query with light structure if user typed "title - author"
+      const googleQuery =
+        authorPart && titlePart
+          ? `intitle:${titlePart} inauthor:${authorPart}`
+          : raw;
+
+      async function searchGoogle(q: string): Promise<SearchResult[]> {
+        const googleKey = cacheKey(`${q}`, perSourceLimit, "google");
         const cachedGoogle = readCache(googleKey);
-        if (cachedGoogle) {
-          setSearchResults(cachedGoogle);
-          return;
-        }
+        if (cachedGoogle) return cachedGoogle;
 
+        const url = new URL(GOOGLE_BOOKS_API);
+        url.searchParams.set("q", q);
+        url.searchParams.set("maxResults", String(Math.min(40, Math.max(1, perSourceLimit))));
+        if (GOOGLE_BOOKS_API_KEY && GOOGLE_BOOKS_API_KEY.trim()) {
+          url.searchParams.set("key", GOOGLE_BOOKS_API_KEY.trim());
+        }
         const res = await fetch(url.toString(), { signal: controller.signal });
         const data = await res.json().catch(() => ({} as any));
 
         if (!res.ok) {
-          const message: string | undefined = data?.error?.message;
           if (res.status === 429 || res.status === 403) {
-            // cooldown zodat het niet blijft falen
             disableGoogleForAWhile();
-            // We fall back below
-          } else {
-            // We fall back below
           }
-        } else {
-          const results: SearchResult[] =
-            data.items?.map((item: any) => {
-              const info = item.volumeInfo ?? {};
-              const coverUrl =
-                info.imageLinks?.thumbnail ??
-                info.imageLinks?.smallThumbnail ??
-                info.imageLinks?.medium ??
-                undefined;
-
-              let description = info.description;
-              if (description && description.length > 500) {
-                description = description.substring(0, 500) + "...";
-              }
-              const pageCount =
-                typeof info.pageCount === "number" ? info.pageCount : undefined;
-
-              return {
-                id: item.id,
-                title: info.title ?? "Onbekende titel",
-                authors: (info.authors ?? []).join(", ") || "Onbekende auteur",
-                coverUrl: coverUrl?.replace("http://", "https://"),
-                description: description || undefined,
-                pageCount
-              };
-            }) ?? [];
-
-          writeCache(googleKey, results);
-          setSearchResults(results);
-          return;
+          throw new Error("Google Books error");
         }
-      } else if (GOOGLE_BOOKS_API_KEY && GOOGLE_BOOKS_API_KEY.trim()) {
-        // key is er, maar Google is tijdelijk uit door quota/cooldown
-        // We fall back below
+
+        const results: SearchResult[] =
+          data.items?.map((item: any) => {
+            const info = item.volumeInfo ?? {};
+            const coverUrl =
+              info.imageLinks?.thumbnail ??
+              info.imageLinks?.smallThumbnail ??
+              info.imageLinks?.medium ??
+              undefined;
+
+            let description = info.description;
+            if (description && description.length > 500) {
+              description = description.substring(0, 500) + "...";
+            }
+            const pageCount = typeof info.pageCount === "number" ? info.pageCount : undefined;
+            const languageCodes = mapToOpenLibraryLanguageCodes(info.language);
+
+            const baseTitle = info.title ?? "Onbekende titel";
+            const sub =
+              typeof info.subtitle === "string" ? info.subtitle.trim() : "";
+            const combinedTitle =
+              sub && !sub.toLowerCase().startsWith(baseTitle.toLowerCase())
+                ? `${baseTitle} – ${sub}`
+                : baseTitle;
+
+            return {
+              id: item.id,
+              title: combinedTitle,
+              authors: (info.authors ?? []).join(", ") || "Onbekende auteur",
+              coverUrl: coverUrl?.replace("http://", "https://"),
+              description: description || undefined,
+              pageCount,
+              languageCodes
+            };
+          }) ?? [];
+
+        writeCache(googleKey, results);
+        return results;
       }
 
-      // Fallback: Apple Books → Open Library
-      const itunesKey = cacheKey(query, maxResults, "itunes");
+      const itunesKey = cacheKey(raw, perSourceLimit, "itunes");
+      const openKey = cacheKey(raw, perSourceLimit, "openlibrary");
       const cachedItunes = readCache(itunesKey);
-      if (cachedItunes) {
-        setSearchResults(cachedItunes);
-        return;
-      }
-
-      try {
-        const itunesResults = await searchItunesBooks(query, maxResults, controller);
-        writeCache(itunesKey, itunesResults);
-        if (itunesResults.length > 0) {
-          setSearchResults(itunesResults);
-          if (GOOGLE_BOOKS_API_KEY && GOOGLE_BOOKS_API_KEY.trim() && !googleAllowed) {
-            setSearchError(
-              "Google Books is tijdelijk uitgeschakeld (quota). Zoeken gaat via Apple Books."
-            );
-          }
-          return;
-        }
-      } catch {
-        // ignore
-      }
-
-      const openKey = cacheKey(query, maxResults, "openlibrary");
       const cachedOpen = readCache(openKey);
-      const openResults = cachedOpen ?? (await searchOpenLibrary(query, maxResults, controller));
-      if (!cachedOpen) writeCache(openKey, openResults);
-      setSearchResults(openResults);
+
+      const itunesPromise = cachedItunes
+        ? Promise.resolve(cachedItunes)
+        : searchItunesBooks(raw, perSourceLimit, controller).then((r) => {
+            writeCache(itunesKey, r);
+            return r;
+          });
+      const openPromise = cachedOpen
+        ? Promise.resolve(cachedOpen)
+        : searchOpenLibrary(raw, perSourceLimit, controller).then((r) => {
+            writeCache(openKey, r);
+            return r;
+          });
+      const googlePromise =
+        googleAllowed ? searchGoogle(googleQuery) : Promise.resolve([] as SearchResult[]);
+
+      const settled = await Promise.allSettled([googlePromise, itunesPromise, openPromise]);
+      const googleResults = settled[0].status === "fulfilled" ? settled[0].value : [];
+      const itunesResults = settled[1].status === "fulfilled" ? settled[1].value : [];
+      const openResults = settled[2].status === "fulfilled" ? settled[2].value : [];
+
+      let combined = mergeDedupeAndRank(raw, [googleResults, itunesResults, openResults], maxResults);
+
+      if (combined.length === 0 && titlePart && authorPart) {
+        // Fallback: zoek op auteur-only als titel/spelling geen resultaten oplevert.
+        const authorOnly = authorPart.trim();
+        if (authorOnly) {
+          const itunesKey2 = cacheKey(authorOnly, perSourceLimit, "itunes");
+          const openKey2 = cacheKey(authorOnly, perSourceLimit, "openlibrary");
+          const cachedItunes2 = readCache(itunesKey2);
+          const cachedOpen2 = readCache(openKey2);
+
+          const itunesPromise2 = cachedItunes2
+            ? Promise.resolve(cachedItunes2)
+            : searchItunesBooks(authorOnly, perSourceLimit, controller).then((r) => {
+                writeCache(itunesKey2, r);
+                return r;
+              });
+          const openPromise2 = cachedOpen2
+            ? Promise.resolve(cachedOpen2)
+            : searchOpenLibrary(authorOnly, perSourceLimit, controller).then((r) => {
+                writeCache(openKey2, r);
+                return r;
+              });
+
+          const googlePromise2 = googleAllowed ? searchGoogle(authorOnly) : Promise.resolve([] as SearchResult[]);
+          const settled2 = await Promise.allSettled([googlePromise2, itunesPromise2, openPromise2]);
+          const googleResults2 = settled2[0].status === "fulfilled" ? settled2[0].value : [];
+          const itunesResults2 = settled2[1].status === "fulfilled" ? settled2[1].value : [];
+          const openResults2 = settled2[2].status === "fulfilled" ? settled2[2].value : [];
+
+          combined = mergeDedupeAndRank(raw, [googleResults2, itunesResults2, openResults2], maxResults);
+        }
+      }
+
+      const filtered =
+        authorPart.trim().length > 0 ? combined.filter((r) => resultMatchesAuthorFilter(r, authorPart)) : combined;
+      setSearchResults(filtered);
+
       if (GOOGLE_BOOKS_API_KEY && GOOGLE_BOOKS_API_KEY.trim() && !googleAllowed) {
-        setSearchError("Google Books is tijdelijk uitgeschakeld (quota). Zoeken gaat via Open Library.");
+        setSearchError("Google Books is tijdelijk uitgeschakeld (quota). Zoeken gaat via Apple Books/Open Library.");
       }
     } catch (error) {
       // Abort is expected when user keeps typing
@@ -670,6 +1466,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     }
     setIsSearching(true);
     setShowSuggestions(false);
+    setActiveSuggestionIndex(-1);
     if (searchByAuthor) {
       try {
         const results = await searchOpenLibraryByAuthor(searchTerm);
@@ -704,11 +1501,13 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
         if (suggestionJustSelectedRef.current) return;
         searchBooks(searchTerm, true);
         setShowSuggestions(true);
+        setActiveSuggestionIndex(-1);
       }, 450);
     } else {
       suggestionJustSelectedRef.current = false;
       setSuggestions([]);
       setShowSuggestions(false);
+      setActiveSuggestionIndex(-1);
     }
 
     return () => {
@@ -726,6 +1525,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
         !suggestionsRef.current.contains(event.target as Node)
       ) {
         setShowSuggestions(false);
+        setShowAuthorSuggestions(false);
       }
     }
 
@@ -737,10 +1537,16 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
 
   async function selectSuggestion(suggestion: SearchResult) {
     suggestionJustSelectedRef.current = true;
-    const query = `${suggestion.title} ${suggestion.authors}`;
-    setSearchTerm(query);
+    const split = splitSeriesFromTitle(suggestion.title);
+    const nextTitle = normalizeSeriesPartTitleCase(split.title);
+    const nextAuthor = suggestion.authors;
+    setSearchTitle(nextTitle);
+    setSearchAuthor(nextAuthor);
+    const query = `${nextTitle} - ${nextAuthor}`;
     setShowSuggestions(false);
+    setShowAuthorSuggestions(false);
     setSuggestions([]);
+    setActiveSuggestionIndex(-1);
     // Voer direct een zoekopdracht uit
     setIsSearching(true);
     await searchBooks(query, false);
@@ -754,6 +1560,32 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
 
     // Als het boek al bestaat in de bibliotheek
     if (existing) {
+      const highlightToken = getQueryHighlightToken(
+        searchTerm,
+        result.title,
+        result.authors
+      );
+      const highlightOriginal = highlightToken
+        ? getTokenFromQueryOriginalCase(searchTerm, highlightToken)
+        : null;
+
+      const shouldNormalizeExistingToPartTitle =
+        existing.seriesName &&
+        normalizeForMatch(existing.title) === normalizeForMatch(existing.seriesName) &&
+        (highlightOriginal || highlightToken);
+
+      if (shouldNormalizeExistingToPartTitle) {
+        const nextTitle = normalizeSeriesPartTitleCase(
+          highlightOriginal ?? highlightToken!
+        );
+        if (normalizeForMatch(existing.title) !== normalizeForMatch(nextTitle)) {
+          const updated = books.map((b) =>
+            b.id === existing.id ? { ...b, title: nextTitle, seriesName: existing.seriesName } : b
+          );
+          persist(updated);
+        }
+      }
+
       // Standaardboekenkasten (status-gebonden)
       if (statusFromShelf) {
         // Al dezelfde status → al op deze boekenkast
@@ -798,14 +1630,30 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
         ? undefined
         : [targetShelfId];
 
+    const split = splitSeriesFromTitle(result.title);
+    const highlightToken = getQueryHighlightToken(
+      searchTerm,
+      result.title,
+      result.authors
+    );
+    const highlightOriginal = highlightToken
+      ? getTokenFromQueryOriginalCase(searchTerm, highlightToken)
+      : null;
+
     const newBook: Book = {
       id: result.id,
-      title: result.title,
+      title:
+          split.seriesName &&
+          normalizeForMatch(split.title) === normalizeForMatch(split.seriesName) &&
+          (highlightOriginal || highlightToken)
+            ? normalizeSeriesPartTitleCase(highlightOriginal ?? highlightToken!)
+            : normalizeSeriesPartTitleCase(split.title),
       authors: result.authors,
       coverUrl: result.coverUrl,
       description: result.description,
       pageCount: result.pageCount,
       status: effectiveStatus,
+      ...(split.seriesName && { seriesName: split.seriesName }),
       ...(shelfIds && { shelfIds })
     };
     persist([...books, newBook]);
@@ -849,9 +1697,9 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     persist(updated);
   }
 
-  function openManualBookModal() {
-    setManualTitle("");
-    setManualAuthors("");
+  function openManualBookModal(prefill?: { title?: string; authors?: string }) {
+    setManualTitle(prefill?.title ? prefill.title : "");
+    setManualAuthors(prefill?.authors ? prefill.authors : "");
     setManualPageCount("");
     setManualSeriesName("");
     setManualSeriesNumber("");
@@ -998,41 +1846,80 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       {showSearch && (
         <section className="card">
           <form onSubmit={handleSearch} className="search-form">
-            <label className="search-by-author-label">
-              <input
-                type="checkbox"
-                checked={searchByAuthor}
-                onChange={(e) => setSearchByAuthor(e.target.checked)}
-              />
-              <span>Zoek op auteur</span>
-            </label>
+            {/* Hint removed (UI already guides via placeholders) */}
             <div className="search-input-wrapper" ref={suggestionsRef}>
               <div className="search-input-inner">
                 <input
+                  ref={searchTitleInputRef}
                   type="search"
-                  placeholder={searchByAuthor ? "Naam auteur…" : "Zoek op titel of auteur"}
-                  value={searchTerm}
+                  placeholder="Titel…"
+                  value={searchTitle}
                   onChange={(e) => {
                     suggestionJustSelectedRef.current = false;
-                    setSearchTerm(e.target.value);
+                    setSearchTitle(e.target.value);
                   }}
                   onFocus={() => {
                     if (!searchByAuthor && suggestions.length > 0 && !suggestionJustSelectedRef.current) {
                       setShowSuggestions(true);
                     }
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Tab") {
+                      e.preventDefault();
+                      setShowSuggestions(false);
+                      setActiveSuggestionIndex(-1);
+                      // Mobile: this is also the "next" action when tabbing through.
+                      searchAuthorInputRef.current?.focus();
+                      return;
+                    }
+
+                    // On mobile, pressing Enter ("Next") should jump to the author field instead of submitting,
+                    // but only when we haven't selected a suggestion yet.
+                    if (e.key === "Enter" && activeSuggestionIndex < 0 && searchAuthor.trim().length === 0) {
+                      e.preventDefault();
+                      setShowSuggestions(false);
+                      setActiveSuggestionIndex(-1);
+                      searchAuthorInputRef.current?.focus();
+                      return;
+                    }
+
+                    if (searchByAuthor) return;
+                    if (!showSuggestions || suggestions.length === 0) return;
+
+                    if (e.key === "Escape") {
+                      setShowSuggestions(false);
+                      setActiveSuggestionIndex(-1);
+                      return;
+                    }
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setActiveSuggestionIndex((idx) => Math.min(suggestions.length - 1, idx + 1));
+                      return;
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setActiveSuggestionIndex((idx) => Math.max(0, idx <= 0 ? 0 : idx - 1));
+                      return;
+                    }
+                    if (e.key === "Enter" && activeSuggestionIndex >= 0 && activeSuggestionIndex < suggestions.length) {
+                      e.preventDefault();
+                      selectSuggestion(suggestions[activeSuggestionIndex]);
+                      return;
+                    }
+                  }}
                   className="search-input search-input-with-clear"
                 />
-                {searchTerm.trim().length > 0 && (
+                {searchTitle.trim().length > 0 && (
                   <button
                     type="button"
                     className="search-clear-button"
                     onClick={() => {
-                      setSearchTerm("");
+                      setSearchTitle("");
                       setSuggestions([]);
                       setShowSuggestions(false);
                       setSearchResults([]);
                       setSearchError("");
+                      setActiveSuggestionIndex(-1);
                     }}
                     aria-label="Zoekterm wissen"
                   >
@@ -1040,27 +1927,224 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                   </button>
                 )}
               </div>
-              {showSuggestions && suggestions.length > 0 && (
-                <div className="suggestions-dropdown">
-                  {suggestions.map((suggestion) => (
-                    <div
-                      key={suggestion.id}
-                      className="suggestion-item"
-                      onClick={() => selectSuggestion(suggestion)}
-                    >
-                      {suggestion.coverUrl && (
-                        <img
-                          src={suggestion.coverUrl}
-                          alt={suggestion.title}
-                          className="suggestion-cover"
-                        />
-                      )}
-                      <div className="suggestion-info">
-                        <div className="suggestion-title">{suggestion.title}</div>
-                        <div className="suggestion-authors">{suggestion.authors}</div>
+              <div className="search-input-inner">
+                <input
+                  ref={searchAuthorInputRef}
+                  type="search"
+                  placeholder="Auteur…"
+                  value={searchAuthor}
+                  onChange={(e) => {
+                    suggestionJustSelectedRef.current = false;
+                    setSearchAuthor(e.target.value);
+                    setActiveAuthorSuggestionIndex(-1);
+                  }}
+                  onFocus={() => setShowAuthorSuggestions(true)}
+                  onKeyDown={(e) => {
+                    if (!showAuthorSuggestions || authorInputSuggestions.length === 0) return;
+
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setShowAuthorSuggestions(false);
+                      setActiveAuthorSuggestionIndex(-1);
+                      return;
+                    }
+
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setActiveAuthorSuggestionIndex((idx) => (idx < 0 ? 0 : Math.min(authorInputSuggestions.length - 1, idx + 1)));
+                      return;
+                    }
+
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setActiveAuthorSuggestionIndex((idx) =>
+                        idx < 0 ? authorInputSuggestions.length - 1 : Math.max(0, idx - 1)
+                      );
+                      return;
+                    }
+
+                    if (e.key === "Enter") {
+                      if (activeAuthorSuggestionIndex >= 0 && activeAuthorSuggestionIndex < authorInputSuggestions.length) {
+                        e.preventDefault();
+                        const name = authorInputSuggestions[activeAuthorSuggestionIndex];
+
+                        suggestionJustSelectedRef.current = false;
+                        setSearchAuthor(name);
+                        setShowAuthorSuggestions(false);
+                        setActiveAuthorSuggestionIndex(-1);
+                        setSuggestions([]);
+                        setShowSuggestions(false);
+                        setActiveSuggestionIndex(-1);
+                        setSearchError("");
+                        return;
+                      }
+
+                      // If user presses Enter while dropdown is open, select the first item.
+                      if (authorInputSuggestions.length > 0) {
+                        e.preventDefault();
+                        const name = authorInputSuggestions[0];
+
+                        suggestionJustSelectedRef.current = false;
+                        setSearchAuthor(name);
+                        setShowAuthorSuggestions(false);
+                        setActiveAuthorSuggestionIndex(-1);
+                        setSuggestions([]);
+                        setShowSuggestions(false);
+                        setActiveSuggestionIndex(-1);
+                        setSearchError("");
+                      }
+                      return;
+                    }
+                  }}
+                  className="search-input search-input-with-clear"
+                />
+                {searchAuthor.trim().length > 0 && (
+                  <button
+                    type="button"
+                    className="search-clear-button"
+                    onClick={() => {
+                      setSearchAuthor("");
+                      setShowAuthorSuggestions(false);
+                      setActiveAuthorSuggestionIndex(-1);
+                      setSuggestions([]);
+                      setShowSuggestions(false);
+                      setSearchResults([]);
+                      setSearchError("");
+                      setActiveSuggestionIndex(-1);
+                    }}
+                    aria-label="Auteur wissen"
+                  >
+                    ×
+                  </button>
+                )}
+                {showAuthorSuggestions && authorInputSuggestions.length > 0 && (
+                  <div
+                    ref={authorSuggestionsContainerRef}
+                    className="author-input-suggestions"
+                    role="listbox"
+                    aria-label="Auteur suggesties"
+                  >
+                    {authorInputSuggestions.map((name) => (
+                      <button
+                        key={name}
+                        type="button"
+                        className={`author-input-suggestion-item${name === authorInputSuggestions[activeAuthorSuggestionIndex] ? " active" : ""}`}
+                        role="option"
+                        onClick={() => {
+                          suggestionJustSelectedRef.current = false;
+                          setSearchAuthor(name);
+                          setShowAuthorSuggestions(false);
+                          setActiveAuthorSuggestionIndex(-1);
+                          setSuggestions([]);
+                          setShowSuggestions(false);
+                          setActiveSuggestionIndex(-1);
+                          setSearchError("");
+                        }}
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {showSuggestions && suggestions.length > 0 && searchResults.length === 0 && (
+                <div className="search-results search-suggestions-inline" aria-label="Zoeksuggesties">
+                  {suggestions.map((suggestion, idx) => {
+                    const existingBook = findExistingBookForResult(suggestion);
+                    const alreadyRead = existingBook?.status === "gelezen";
+                    const highlightToken = getQueryHighlightToken(
+                      searchTerm,
+                      suggestion.title,
+                      suggestion.authors
+                    );
+                    const split = existingBook
+                      ? { title: existingBook.title, seriesName: existingBook.seriesName }
+                      : splitSeriesFromTitle(suggestion.title);
+                    const shouldUseQueryTokenAsPartTitle =
+                      split.seriesName &&
+                      normalizeForMatch(split.title) === normalizeForMatch(split.seriesName) &&
+                      !!highlightToken;
+
+                    const displayTitle = shouldUseQueryTokenAsPartTitle
+                      ? getTokenFromQueryOriginalCase(searchTerm, highlightToken!) ?? highlightToken!
+                      : split.title;
+                    const normalizedDisplayTitle = normalizeSeriesPartTitleCase(displayTitle);
+
+                    return (
+                      <div
+                        key={suggestion.id}
+                        className={`search-result-card${idx === activeSuggestionIndex ? " active" : ""}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => selectSuggestion(suggestion)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            selectSuggestion(suggestion);
+                          }
+                        }}
+                        title="Klik om zoekresultaten te tonen"
+                      >
+                        {suggestion.coverUrl ? (
+                          <img
+                            src={suggestion.coverUrl}
+                            alt={suggestion.title}
+                            className="book-cover-small"
+                          />
+                        ) : (
+                          <div className="book-cover-small-placeholder" aria-hidden="true">
+                            {suggestion.title.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                          <div className="search-result-main">
+                          {split.seriesName && (
+                            <div className="search-result-series-badge">
+                              {split.seriesName}
+                            </div>
+                          )}
+                          <div className="search-result-title">{normalizedDisplayTitle}</div>
+                          <div className="search-result-authors">{suggestion.authors}</div>
+                          <div className="search-result-meta">
+                            <span className="search-result-source">
+                              {getResultSourceLabel(suggestion)}
+                            </span>
+                            {(() => {
+                              const label = getLanguageLabel(suggestion);
+                              return label ? (
+                                <span className="search-result-language-subtle">{label}</span>
+                              ) : null;
+                            })()}
+                            {existingBook && getExistingBookShelfNames(existingBook).length > 0 && (
+                              <span className="search-result-added-to">
+                                Boekenkast(en): {getExistingBookShelfNames(existingBook).join(", ")}
+                              </span>
+                            )}
+                            {typeof suggestion.pageCount === "number" && (
+                              <span className="search-result-pages">
+                                {suggestion.pageCount} blz
+                              </span>
+                            )}
+                            {alreadyRead && (
+                              <span className="search-result-status-pill">
+                                Al gelezen
+                              </span>
+                            )}
+                            <span className="search-result-hint">Toon in resultaten</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startAddFromSearch(suggestion);
+                          }}
+                          className="secondary-button"
+                        >
+                          Toevoegen
+                        </button>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1069,7 +2153,27 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
             </button>
           </form>
           <div style={{ marginTop: "0.75rem" }}>
-            <button onClick={openManualBookModal} className="secondary-button">
+            <button
+              onClick={() => {
+                const trimmed = searchTerm.trim();
+                if (!searchByAuthor && !isSearching && searchResults.length === 0 && trimmed) {
+                  const { titlePart, authorPart } = splitQuery(trimmed);
+
+                  openManualBookModal({
+                    title: normalizeSeriesPartTitleCase(toTitleCase(titlePart)),
+                    authors: authorPart ? toTitleCase(authorPart) : undefined
+                  });
+                } else if (searchByAuthor && trimmed) {
+                  // Auteur zoeken: vul alleen de auteur als dat nuttig is.
+                  openManualBookModal({
+                    authors: toTitleCase(trimmed)
+                  });
+                } else {
+                  openManualBookModal();
+                }
+              }}
+              className="secondary-button"
+            >
               Handmatig boek toevoegen
             </button>
           </div>
@@ -1078,12 +2182,37 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
               {searchError}
             </p>
           )}
+          {!isSearching && searchTerm.trim().length > 0 && searchResults.length === 0 && !searchByAuthor && (
+            <div className="search-empty">
+              <p className="page-intro-small" style={{ marginTop: 10 }}>
+                  Geen resultaten. Probeer een andere schrijfwijze, of zoek als <strong>Titel - Auteur</strong>.
+              </p>
+            </div>
+          )}
           {searchResults.length > 0 && (
             <div className="search-results">
               {searchResults.map((r) => (
                 (() => {
                   const existingBook = findExistingBookForResult(r);
                   const alreadyRead = existingBook?.status === "gelezen";
+                  const highlightToken = getQueryHighlightToken(
+                    searchTerm,
+                    r.title,
+                    r.authors
+                  );
+                  const split = existingBook
+                    ? { title: existingBook.title, seriesName: existingBook.seriesName }
+                    : splitSeriesFromTitle(r.title);
+                  const shouldUseQueryTokenAsPartTitle =
+                    split.seriesName &&
+                    normalizeForMatch(split.title) === normalizeForMatch(split.seriesName) &&
+                    !!highlightToken;
+
+                  const displayTitle = shouldUseQueryTokenAsPartTitle
+                    ? getTokenFromQueryOriginalCase(searchTerm, highlightToken!) ?? highlightToken!
+                    : split.title;
+                  const normalizedDisplayTitle = normalizeSeriesPartTitleCase(displayTitle);
+
                   return (
                 <div
                   key={r.id}
@@ -1111,9 +2240,24 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                     </div>
                   )}
                   <div className="search-result-main">
-                    <div className="search-result-title">{r.title}</div>
+                    {split.seriesName && (
+                      <div className="search-result-series-badge">
+                        {split.seriesName}
+                      </div>
+                    )}
+                    <div className="search-result-title">{normalizedDisplayTitle}</div>
                     <div className="search-result-authors">{r.authors}</div>
                     <div className="search-result-meta">
+                      <span className="search-result-source">{getResultSourceLabel(r)}</span>
+                      {(() => {
+                        const label = getLanguageLabel(r);
+                        return label ? <span className="search-result-language-subtle">{label}</span> : null;
+                      })()}
+                      {existingBook && getExistingBookShelfNames(existingBook).length > 0 && (
+                        <span className="search-result-added-to">
+                          Boekenkast(en): {getExistingBookShelfNames(existingBook).join(", ")}
+                        </span>
+                      )}
                       {typeof r.pageCount === "number" && (
                         <span className="search-result-pages">
                           {r.pageCount} blz
@@ -1583,20 +2727,24 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                   </div>
                   {(() => {
                     const trimmed = manualAuthors.trim();
-                    if (!trimmed) return null;
                     const parts = manualAuthors
                       .split(",")
                       .map((p) => p.trim())
                       .filter(Boolean);
-                    const activeToken =
-                      parts.length > 0 ? parts[parts.length - 1] : trimmed;
                     const currentAuthors = parts;
-                    const matches = existingAuthors
-                      .filter((name) =>
-                        name.toLowerCase().includes(activeToken.toLowerCase())
-                      )
-                      .filter((name) => !currentAuthors.includes(name))
-                      .slice(0, 8);
+
+                    const matches =
+                      !trimmed
+                        ? topAuthors.filter((name) => !currentAuthors.includes(name))
+                        : existingAuthors
+                            .filter((name) =>
+                              name
+                                .toLowerCase()
+                                .includes((parts[parts.length - 1] ?? trimmed).toLowerCase())
+                            )
+                            .filter((name) => !currentAuthors.includes(name))
+                            .slice(0, 8);
+
                     if (matches.length === 0) return null;
                     return (
                       <div className="search-suggestions">
