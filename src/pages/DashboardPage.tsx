@@ -337,8 +337,10 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
     return books
       .filter((b) => b.status === "wil-ik-lezen")
       .sort((a, b) => {
-        const orderA = a.order ?? 0;
-        const orderB = b.order ?? 0;
+        // Sorteer voor de TBR-leeslijst op `tbrOrder` (mobiel pijltjes),
+        // en alleen als die ontbreekt vallen we terug op `order` (legacy/compat).
+        const orderA = a.tbrOrder ?? a.order ?? 0;
+        const orderB = b.tbrOrder ?? b.order ?? 0;
         if (orderA !== orderB) return orderA - orderB;
         return a.title.localeCompare(b.title);
       });
