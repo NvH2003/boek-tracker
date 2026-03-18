@@ -2206,8 +2206,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                 const authorInput = searchAuthor.trim();
 
                 // Altijd automatisch invullen als de gebruiker iets heeft ingevuld.
-                // (Ook als er nog resultaten/suggesties zichtbaar zijn.)
-                if (!isSearching && (titleInput || authorInput)) {
+                // Ook als er nog resultaten/suggesties zichtbaar zijn of een zoekactie bezig is.
+                if (titleInput || authorInput) {
                   const split = titleInput ? splitSeriesFromTitle(titleInput) : { title: titleInput };
                   const prefillTitle = titleInput
                     ? normalizeSeriesPartTitleCase(toTitleCase(split.title))
