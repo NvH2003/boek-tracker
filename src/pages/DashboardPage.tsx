@@ -417,7 +417,8 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
     if (selectedBook?.id === bookId) {
       const newOrder = reordered.length;
       setEditingOrder(String(newOrder));
-      setSelectedBook({ ...selectedBook, order: newOrder });
+      // Zet alleen TBR-volgorde (tbrOrder) zodat "Volgorde" in details (book.order) niet meeschuift.
+      setSelectedBook({ ...selectedBook, tbrOrder: newOrder });
     }
   }
 
