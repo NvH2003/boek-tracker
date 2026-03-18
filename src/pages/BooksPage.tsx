@@ -114,7 +114,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   const [addToShelfResult, setAddToShelfResult] = useState<SearchResult | null>(null);
   const [showAddToShelfModal, setShowAddToShelfModal] = useState(false);
   const [addToShelfSelectedShelfIds, setAddToShelfSelectedShelfIds] = useState<Set<string>>(new Set());
-  const [addToShelfSortMode, setAddToShelfSortMode] = useState<"order" | "alpha">("order");
   const [toast, setToast] = useState<string>("");
   const [searchByAuthor, setSearchByAuthor] = useState(false);
   const [authorSearchResults, setAuthorSearchResults] = useState<SearchResult[]>([]);
@@ -241,12 +240,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   );
 
   const shelvesSortedForAddToShelf = useMemo(() => {
-    const arr = [...shelves];
-    if (addToShelfSortMode === "alpha") {
-      return arr.sort((a, b) => a.name.localeCompare(b.name, "nl-NL"));
-    }
-    return arr;
-  }, [shelves, addToShelfSortMode]);
+    return [...shelves].sort((a, b) => a.name.localeCompare(b.name, "nl-NL"));
+  }, [shelves]);
 
   const suggestionsAbortRef = useRef<AbortController | null>(null);
   const resultsAbortRef = useRef<AbortController | null>(null);
@@ -1706,7 +1701,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   function startAddFromSearch(result: SearchResult) {
     setAddToShelfResult(result);
     setAddToShelfSelectedShelfIds(new Set());
-    setAddToShelfSortMode("order");
     setShowAddToShelfModal(true);
   }
 
@@ -2510,26 +2504,10 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
               {" "}
               toevoegen?
             </p>
-            <div className="add-to-shelf-sort-row">
-              <div className="add-to-shelf-sort-buttons">
-                <button
-                  type="button"
-                  className={`add-to-shelf-sort-btn${addToShelfSortMode === "order" ? " active" : ""}`}
-                  onClick={() => setAddToShelfSortMode("order")}
-                >
-                  Volgorde
-                </button>
-                <button
-                  type="button"
-                  className={`add-to-shelf-sort-btn${addToShelfSortMode === "alpha" ? " active" : ""}`}
-                  onClick={() => setAddToShelfSortMode("alpha")}
-                >
-                  Alfabetisch
-                </button>
-              </div>
-              <div className="add-to-shelf-selected-count">
-                {addToShelfSelectedShelfIds.size > 0 ? `${addToShelfSelectedShelfIds.size} geselecteerd` : "Selecteer boekenkasten"}
-              </div>
+            <div className="add-to-shelf-selected-count">
+              {addToShelfSelectedShelfIds.size > 0
+                ? `${addToShelfSelectedShelfIds.size} geselecteerd`
+                : "Selecteer boekenkasten"}
             </div>
             <ul className="add-to-shelf-list">
               {(() => {
