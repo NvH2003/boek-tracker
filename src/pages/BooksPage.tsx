@@ -534,8 +534,14 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   function toAuthorNameCase(input: string): string {
     // Like `toTitleCase`, but don't keep arbitrary fully-uppercase words.
     // This avoids turning normal names like "RILEY" into "RILEY".
-    const trimmed = input.trim();
+    let trimmed = input.trim();
     if (!trimmed) return trimmed;
+
+    // If the user typed multiple authors with separators (e.g. "&" or ";"),
+    // normalize them into comma-separated format so manual input shows ", ".
+    trimmed = trimmed
+      .replace(/\s*(?:&|\/|;)\s*/g, ", ")
+      .replace(/\s+\b(AND|and|EN|en)\b\s+/g, ", ");
 
     const parts = trimmed.split(",").map((p) => p.trim()).filter(Boolean);
     const casedParts = parts.map((p) =>
