@@ -5074,6 +5074,11 @@ select {
   transition: background 0.15s, border-color 0.15s;
 }
 
+.add-to-shelf-item-selected {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.8);
+}
+
 .add-to-shelf-item:hover {
   background: rgba(51, 65, 85, 0.9);
   border-color: #60a5fa;
@@ -5122,6 +5127,45 @@ select {
 .add-to-shelf-new-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.add-to-shelf-sort-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.75rem 0;
+}
+
+.add-to-shelf-sort-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.add-to-shelf-sort-btn {
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: rgba(30, 41, 59, 0.7);
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.add-to-shelf-sort-btn:hover {
+  border-color: #60a5fa;
+}
+
+.add-to-shelf-sort-btn.active {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.7);
+}
+
+.add-to-shelf-selected-count {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
 /* Modal: boeken van auteur (zoek op auteur) */

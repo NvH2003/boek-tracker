@@ -113,6 +113,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
   const [addToShelfResult, setAddToShelfResult] = useState<SearchResult | null>(null);
   const [showAddToShelfModal, setShowAddToShelfModal] = useState(false);
+  const [addToShelfSelectedShelfIds, setAddToShelfSelectedShelfIds] = useState<Set<string>>(new Set());
+  const [addToShelfSortMode, setAddToShelfSortMode] = useState<"order" | "alpha">("order");
   const [toast, setToast] = useState<string>("");
   const [searchByAuthor, setSearchByAuthor] = useState(false);
   const [authorSearchResults, setAuthorSearchResults] = useState<SearchResult[]>([]);
@@ -237,6 +239,14 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [shelves, manualShelfIds]
   );
+
+  const shelvesSortedForAddToShelf = useMemo(() => {
+    const arr = [...shelves];
+    if (addToShelfSortMode === "alpha") {
+      return arr.sort((a, b) => a.name.localeCompare(b.name, "nl-NL"));
+    }
+    return arr;
+  }, [shelves, addToShelfSortMode]);
 
   const suggestionsAbortRef = useRef<AbortController | null>(null);
   const resultsAbortRef = useRef<AbortController | null>(null);
@@ -1695,6 +1705,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
 
   function startAddFromSearch(result: SearchResult) {
     setAddToShelfResult(result);
+    setAddToShelfSelectedShelfIds(new Set());
+    setAddToShelfSortMode("order");
     setShowAddToShelfModal(true);
   }
 
@@ -2479,6 +2491,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
           onClick={() => {
             setShowAddToShelfModal(false);
             setAddToShelfResult(null);
+            setAddToShelfSelectedShelfIds(new Set());
           }}
         >
           <div
@@ -2497,23 +2510,45 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
               {" "}
               toevoegen?
             </p>
+            <div className="add-to-shelf-sort-row">
+              <div className="add-to-shelf-sort-buttons">
+                <button
+                  type="button"
+                  className={`add-to-shelf-sort-btn${addToShelfSortMode === "order" ? " active" : ""}`}
+                  onClick={() => setAddToShelfSortMode("order")}
+                >
+                  Volgorde
+                </button>
+                <button
+                  type="button"
+                  className={`add-to-shelf-sort-btn${addToShelfSortMode === "alpha" ? " active" : ""}`}
+                  onClick={() => setAddToShelfSortMode("alpha")}
+                >
+                  Alfabetisch
+                </button>
+              </div>
+              <div className="add-to-shelf-selected-count">
+                {addToShelfSelectedShelfIds.size > 0 ? `${addToShelfSelectedShelfIds.size} geselecteerd` : "Selecteer boekenkasten"}
+              </div>
+            </div>
             <ul className="add-to-shelf-list">
               {(() => {
                 const existing = findExistingBookForResult(addToShelfResult);
-                return shelves.map((shelf) => {
+                return shelvesSortedForAddToShelf.map((shelf) => {
                   const statusFromShelf = STATUS_BY_SHELF_ID[shelf.id];
                   const alreadyOnShelf = existing
                     ? statusFromShelf
                       ? existing.status === statusFromShelf
                       : (existing.shelfIds ?? []).includes(shelf.id)
                     : false;
+                  const isSelected = addToShelfSelectedShelfIds.has(shelf.id);
                   return (
                     <li key={shelf.id}>
                       <button
                         type="button"
                         className={`add-to-shelf-item${
                           alreadyOnShelf ? " add-to-shelf-item-disabled" : ""
-                        }`}
+                        }${!alreadyOnShelf && isSelected ? " add-to-shelf-item-selected" : ""}`}
                         onClick={() => {
                           if (alreadyOnShelf) {
                             const shelfName =
@@ -2522,9 +2557,12 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                             window.setTimeout(() => setToast(""), 2500);
                             return;
                           }
-                          addFromSearch(addToShelfResult, shelf.id);
-                          setShowAddToShelfModal(false);
-                          setAddToShelfResult(null);
+                          setAddToShelfSelectedShelfIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(shelf.id)) next.delete(shelf.id);
+                            else next.add(shelf.id);
+                            return next;
+                          });
                         }}
                       >
                         {shelf.name}
@@ -2536,6 +2574,11 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                         {alreadyOnShelf && (
                           <span className="tag" style={{ marginLeft: 8 }}>
                             Al toegevoegd
+                          </span>
+                        )}
+                        {!alreadyOnShelf && isSelected && (
+                          <span className="tag" style={{ marginLeft: 8 }}>
+                            Geselecteerd
                           </span>
                         )}
                       </button>
@@ -2551,9 +2594,25 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                 onClick={() => {
                   setShowAddToShelfModal(false);
                   setAddToShelfResult(null);
+                  setAddToShelfSelectedShelfIds(new Set());
                 }}
               >
                 Annuleren
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={addToShelfSelectedShelfIds.size === 0}
+                onClick={() => {
+                  Array.from(addToShelfSelectedShelfIds).forEach((shelfId) => {
+                    addFromSearch(addToShelfResult, shelfId);
+                  });
+                  setShowAddToShelfModal(false);
+                  setAddToShelfResult(null);
+                  setAddToShelfSelectedShelfIds(new Set());
+                }}
+              >
+                Toevoegen ({addToShelfSelectedShelfIds.size})
               </button>
             </div>
           </div>
