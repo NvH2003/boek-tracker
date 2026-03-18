@@ -531,6 +531,32 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     return titleCasedParts.join(", ");
   }
 
+  function toAuthorNameCase(input: string): string {
+    // Like `toTitleCase`, but don't keep arbitrary fully-uppercase words.
+    // This avoids turning normal names like "RILEY" into "RILEY".
+    const trimmed = input.trim();
+    if (!trimmed) return trimmed;
+
+    const parts = trimmed.split(",").map((p) => p.trim()).filter(Boolean);
+    const casedParts = parts.map((p) =>
+      p
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((word) => {
+          const lettersOnly = word.replace(/[^A-Za-z]/g, "");
+          const isAcronym =
+            word.length <= 4 && word === word.toUpperCase() && lettersOnly.length >= 2;
+          if (isAcronym) return word;
+
+          const lower = word.toLowerCase();
+          return lower.charAt(0).toUpperCase() + lower.slice(1);
+        })
+        .join(" ")
+    );
+
+    return casedParts.join(", ");
+  }
+
   function mapToOpenLibraryLanguageCodes(raw?: string): string[] | undefined {
     if (!raw) return undefined;
     // iTunes/Google/OpenLibrary gebruiken soms verschillende taalstrings:
@@ -1710,6 +1736,14 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     setShowManualBookModal(true);
   }
 
+  function getGoodreadsSearchUrl(title?: string, authors?: string): string | null {
+    const t = title?.trim();
+    const a = authors?.trim();
+    if (!t && !a) return null;
+    const q = [t, a].filter(Boolean).join(" ");
+    return `https://www.goodreads.com/search?q=${encodeURIComponent(q)}`;
+  }
+
   function closeManualBookModal() {
     setShowManualBookModal(false);
   }
@@ -2154,23 +2188,28 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
           </form>
           <div style={{ marginTop: "0.75rem" }}>
             <button
+              type="button"
               onClick={() => {
-                const trimmed = searchTerm.trim();
-                if (!searchByAuthor && !isSearching && searchResults.length === 0 && trimmed) {
-                  const { titlePart, authorPart } = splitQuery(trimmed);
+                const titleInput = searchTitle.trim();
+                const authorInput = searchAuthor.trim();
+
+                // Altijd automatisch invullen als de gebruiker iets heeft ingevuld.
+                // (Ook als er nog resultaten/suggesties zichtbaar zijn.)
+                if (!isSearching && (titleInput || authorInput)) {
+                  const split = titleInput ? splitSeriesFromTitle(titleInput) : { title: titleInput };
+                  const prefillTitle = titleInput
+                    ? normalizeSeriesPartTitleCase(toTitleCase(split.title))
+                    : undefined;
+                  const prefillAuthors = authorInput ? toAuthorNameCase(authorInput) : undefined;
 
                   openManualBookModal({
-                    title: normalizeSeriesPartTitleCase(toTitleCase(titlePart)),
-                    authors: authorPart ? toTitleCase(authorPart) : undefined
+                    title: prefillTitle,
+                    authors: prefillAuthors
                   });
-                } else if (searchByAuthor && trimmed) {
-                  // Auteur zoeken: vul alleen de auteur als dat nuttig is.
-                  openManualBookModal({
-                    authors: toTitleCase(trimmed)
-                  });
-                } else {
-                  openManualBookModal();
+                  return;
                 }
+
+                openManualBookModal();
               }}
               className="secondary-button"
             >
@@ -2890,6 +2929,17 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
               </label>
               <label className="form-field">
                 <span>Link naar kaft (optioneel)</span>
+                {getGoodreadsSearchUrl(manualTitle, manualAuthors) && (
+                  <a
+                    href={getGoodreadsSearchUrl(manualTitle, manualAuthors) ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="link-button"
+                    aria-label="Zoek dit boek op Goodreads om de kaft te kopieren"
+                  >
+                    Goodreads
+                  </a>
+                )}
                 <input
                   type="url"
                   value={manualCoverUrl}
