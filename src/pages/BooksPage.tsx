@@ -240,7 +240,14 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   );
 
   const shelvesSortedForAddToShelf = useMemo(() => {
-    return [...shelves].sort((a, b) => a.name.localeCompare(b.name, "nl-NL"));
+    // Bij "toevoegen" willen we standaardplanken bovenaan, maar binnen elke groep alfabetisch.
+    const standard = shelves
+      .filter((s) => s.system)
+      .sort((a, b) => a.name.localeCompare(b.name, "nl-NL"));
+    const custom = shelves
+      .filter((s) => !s.system)
+      .sort((a, b) => a.name.localeCompare(b.name, "nl-NL"));
+    return [...standard, ...custom];
   }, [shelves]);
 
   const suggestionsAbortRef = useRef<AbortController | null>(null);
