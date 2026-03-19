@@ -629,6 +629,19 @@ select {
   border-color: rgba(99, 102, 241, 0.6);
 }
 
+.search-result-details-button {
+  font-size: 0.78rem;
+  color: #a5b4fc;
+  opacity: 0.9;
+  padding: 0.2rem 0.3rem;
+}
+
+.search-result-details-button:hover {
+  color: #c7d2fe;
+  background: rgba(99, 102, 241, 0.1);
+  border-radius: 0.45rem;
+}
+
 .search-suggestions-inline {
   margin-top: 0.6rem;
 }

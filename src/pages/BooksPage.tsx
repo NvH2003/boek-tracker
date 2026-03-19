@@ -2343,7 +2343,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                   </button>
                   <button
                     type="button"
-                    className="link-button"
+                    className="link-button search-result-details-button"
                     onClick={(e) => {
                       e.stopPropagation();
                       const baseTitle = split.title;
@@ -2355,7 +2355,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                       });
                     }}
                   >
-                    Toevoegen met details
+                    Met details
                   </button>
                 </div>
                   );
