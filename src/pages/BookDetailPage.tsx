@@ -4,6 +4,7 @@ import { loadBooks, loadShelves, saveBooks, subscribeBooks } from "../storage";
 import { Book, ReadStatus, Shelf } from "../types";
 import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
+import { parseGenres, parseGenresPreserveOrder } from "../genreUtils";
 
 const STATUS_LABELS: Record<ReadStatus, string> = {
   "wil-ik-lezen": "Wil ik lezen",
@@ -49,6 +50,8 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     book?.seriesNumber?.toString() ?? ""
   );
   const [genre, setGenre] = useState<string>(book?.genre ?? "");
+  const [genreQuickAdd, setGenreQuickAdd] = useState<string>("");
+  const [activeGenreSuggestionIndex, setActiveGenreSuggestionIndex] = useState<number>(-1);
   const [order, setOrder] = useState<string>(
     book?.order?.toString() ?? ""
   );
@@ -69,6 +72,117 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     });
     return Array.from(seriesSet).sort();
   }, [books]);
+
+  const existingGenres = useMemo(() => {
+    const set = new Set<string>();
+    books.forEach((b) => {
+      parseGenres(b.genre).forEach((g) => set.add(g));
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "nl-NL"));
+  }, [books]);
+
+  const selectedGenres = useMemo(() => parseGenresPreserveOrder(genre), [genre]);
+  const selectedGenreSet = useMemo(() => new Set(selectedGenres), [selectedGenres]);
+  const selectedGenreLowerSet = useMemo(
+    () => new Set(selectedGenres.map((g) => g.toLowerCase())),
+    [selectedGenres]
+  );
+
+  const genrePillsForSelect = selectedGenres;
+
+  const genreQuickAddTrim = genreQuickAdd.trim();
+  const genreQuickAddLower = genreQuickAddTrim.toLowerCase();
+
+  const genreQuickAddSuggestions = useMemo(() => {
+    if (!genreQuickAddLower) return [];
+    return existingGenres
+      .filter((g) => !selectedGenreLowerSet.has(g.toLowerCase()))
+      .filter((g) => g.toLowerCase().includes(genreQuickAddLower))
+      .slice(0, 8);
+  }, [existingGenres, genreQuickAddLower, selectedGenreLowerSet]);
+
+  const genreExactExisting = useMemo(() => {
+    if (!genreQuickAddLower) return null;
+    return existingGenres.find((g) => g.toLowerCase() === genreQuickAddLower) ?? null;
+  }, [existingGenres, genreQuickAddLower]);
+
+  const canAddNewGenre = useMemo(() => {
+    if (!genreQuickAddTrim) return false;
+    if (selectedGenreLowerSet.has(genreQuickAddLower)) return false;
+    return !genreExactExisting;
+  }, [genreQuickAddTrim, genreQuickAddLower, selectedGenreLowerSet, genreExactExisting]);
+
+  const genreDropdownItems = useMemo(() => {
+    const items = genreQuickAddSuggestions.map((g) => ({
+      key: `s:${g.toLowerCase()}`,
+      label: g,
+      value: g
+    }));
+    if (canAddNewGenre) {
+      items.push({
+        key: `n:${genreQuickAddTrim.toLowerCase()}`,
+        label: `+ ${genreQuickAddTrim}`,
+        value: genreQuickAddTrim
+      });
+    }
+    return items;
+  }, [genreQuickAddSuggestions, canAddNewGenre, genreQuickAddTrim]);
+
+  function addGenreFromResolved(resolvedGenre: string) {
+    const resolved = resolvedGenre.trim();
+    if (!resolved) return;
+
+    const resolvedLower = resolved.toLowerCase();
+    if (selectedGenreLowerSet.has(resolvedLower)) return;
+
+    const current = selectedGenres;
+    if (current.length === 0) {
+      setGenre(resolved);
+      updateBook({ genre: resolved });
+      setGenreQuickAdd("");
+      return;
+    }
+
+    // Preserve assignment order: new genre goes to the end, no re-sorting.
+    const ordered = [...current, resolved];
+
+    const finalGenre = ordered.join(", ");
+    setGenre(finalGenre);
+    updateBook({ genre: finalGenre || undefined });
+    setGenreQuickAdd("");
+  }
+
+  function removeGenreEverywhere(genreToRemoveRaw: string) {
+    const genreToRemove = genreToRemoveRaw.trim();
+    if (!genreToRemove) return;
+    const targetLower = genreToRemove.toLowerCase();
+
+    if (
+      !window.confirm(
+        `Weet je zeker dat je genre "${genreToRemove}" uit alle boeken wilt verwijderen?`
+      )
+    ) {
+      return;
+    }
+
+    const updated = books.map((b) => {
+      if (!b.genre) return b;
+      const parts = parseGenresPreserveOrder(b.genre);
+      const filtered = parts.filter((p) => p.toLowerCase() !== targetLower);
+      if (filtered.length === parts.length) return b;
+      return { ...b, genre: filtered.length ? filtered.join(", ") : undefined };
+    });
+
+    persist(updated);
+
+    const nextSelected = parseGenresPreserveOrder(genre).filter(
+      (p) => p.toLowerCase() !== targetLower
+    );
+    const nextValue = nextSelected.join(", ");
+    setGenre(nextValue);
+    updateBook({ genre: nextValue || undefined });
+    setGenreQuickAdd("");
+  }
 
   const shelves = useMemo(() => loadShelves(), []);
   const bookPlanks = useMemo(() => {
@@ -180,6 +294,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       return;
     }
     const finalSeriesName = seriesName.trim() || undefined;
+    const finalGenre = parseGenresPreserveOrder(genre).join(", ");
     const updatedBooks = books.map((b) =>
       b.id === book.id
         ? {
@@ -192,7 +307,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
             notes: notes.trim() || undefined,
             seriesName: finalSeriesName,
             seriesNumber: finalSeriesName && seriesNumber ? Number(seriesNumber) : undefined,
-            genre: genre.trim() || undefined,
+            genre: finalGenre || undefined,
             order: !finalSeriesName && order ? Number(order) : undefined,
             coverUrl: coverUrl.trim() || undefined,
             description: description.trim() || undefined,
@@ -467,12 +582,152 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         </div>
         <div className="form-field">
           <span>Genre (optioneel)</span>
-          <input
-            type="text"
-            value={genre}
-            onChange={(e) => setGenre(e.target.value)}
-            placeholder="Bijv. Fantasy, Non-fictie"
-          />
+          <div className="genre-pill-container">
+            {genrePillsForSelect.length === 0 ? (
+              <span className="page-intro-small">Geen genres gevonden. Voeg er één toe.</span>
+            ) : (
+              genrePillsForSelect.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  className={`genre-pill ${selectedGenreSet.has(g) ? "selected" : ""}`}
+                  onClick={() => {
+                    const isSelected = selectedGenreSet.has(g);
+                    const current = selectedGenres;
+                    const ordered = isSelected
+                      ? current.filter((x) => x !== g)
+                      : [...current, g].filter(Boolean);
+                    const finalGenre = ordered.join(", ");
+                    setGenre(finalGenre);
+                    updateBook({ genre: finalGenre || undefined });
+                  }}
+                >
+                  {g}
+                  {selectedGenreSet.has(g) && <span className="genre-pill-x">×</span>}
+                  <span
+                    className="genre-pill-trash"
+                    role="button"
+                    tabIndex={0}
+                    title={`Verwijder genre "${g}" uit alle boeken`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      removeGenreEverywhere(g);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter" && e.key !== " ") return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      removeGenreEverywhere(g);
+                    }}
+                  >
+                    🗑
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+          <div className="genre-pill-add-row">
+            <div className="search-input-inner">
+              <input
+                type="text"
+                value={genreQuickAdd}
+                onChange={(e) => {
+                  setGenreQuickAdd(e.target.value);
+                  setActiveGenreSuggestionIndex(-1);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown") {
+                    if (genreDropdownItems.length === 0) return;
+                    e.preventDefault();
+                    setActiveGenreSuggestionIndex((prev) =>
+                      prev < 0 ? 0 : Math.min(prev + 1, genreDropdownItems.length - 1)
+                    );
+                    return;
+                  }
+
+                  if (e.key === "ArrowUp") {
+                    if (genreDropdownItems.length === 0) return;
+                    e.preventDefault();
+                    setActiveGenreSuggestionIndex((prev) =>
+                      prev < 0 ? genreDropdownItems.length - 1 : Math.max(prev - 1, 0)
+                    );
+                    return;
+                  }
+
+                  if (e.key === "Escape") {
+                    if (activeGenreSuggestionIndex >= 0) {
+                      e.preventDefault();
+                      setActiveGenreSuggestionIndex(-1);
+                    }
+                    return;
+                  }
+
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+
+                  if (genreDropdownItems.length > 0) {
+                    const idx =
+                      activeGenreSuggestionIndex >= 0
+                        ? activeGenreSuggestionIndex
+                        : 0;
+                    const valueToAdd = genreDropdownItems[idx]?.value ?? genreQuickAdd.trim();
+                    addGenreFromResolved(valueToAdd);
+                    setActiveGenreSuggestionIndex(-1);
+                    return;
+                  }
+
+                  const v = genreQuickAdd.trim();
+                  if (!v) return;
+                  const resolved = genreExactExisting ?? v;
+                  addGenreFromResolved(resolved);
+                }}
+                placeholder="Nieuwe genre toevoegen (optioneel)"
+                className="search-input search-input-with-clear"
+              />
+              {genreQuickAdd.trim() && (
+                <button
+                  type="button"
+                  className="search-clear-button"
+                  onClick={() => setGenreQuickAdd("")}
+                  aria-label="Genre input wissen"
+                >
+                  ×
+                </button>
+              )}
+              {genreQuickAddTrim && genreDropdownItems.length > 0 && (
+                <div className="search-suggestions" role="listbox" aria-label="Genre suggesties">
+                  {genreDropdownItems.map((item, idx) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`search-suggestion-item${idx === activeGenreSuggestionIndex ? " active" : ""}`}
+                      onClick={() => {
+                        addGenreFromResolved(item.value);
+                        setActiveGenreSuggestionIndex(-1);
+                      }}
+                      role="option"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              className="link-button"
+              disabled={!genreQuickAdd.trim()}
+              onClick={() => {
+                const v = genreQuickAdd.trim();
+                if (!v) return;
+                const resolved = genreExactExisting ?? genreQuickAddSuggestions[0] ?? v;
+                addGenreFromResolved(resolved);
+              }}
+            >
+              + Voeg toe
+            </button>
+          </div>
         </div>
         <div className="form-field">
           <span>Uitgelezen op</span>

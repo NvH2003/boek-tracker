@@ -4,7 +4,7 @@ import { loadBooks, loadShelves, saveShelves, loadChallenge, saveChallenge, save
 import { Book, Shelf, ReadStatus, ReadingChallenge } from "../types";
 import { useBasePath, withBase } from "../routing";
 import { BookDetailPage } from "./BookDetailPage";
-import { formatGenres } from "../genreUtils";
+import { formatGenresPreserveOrder } from "../genreUtils";
 
 function formatDate(date: Date): string {
   const year = date.getFullYear();
@@ -885,6 +885,9 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                                     {book.seriesNumber && ` #${book.seriesNumber}`}
                                   </div>
                                 )}
+                                {book.genre && (
+                                  <div className="dashboard-shelf-book-genre">{formatGenresPreserveOrder(book.genre)}</div>
+                                )}
                                 <div
                                   className="shelf-book-title"
                                   title={book.title}
@@ -1081,11 +1084,11 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                               {book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}
                             </div>
                           )}
-                          {book.genre && (
-                            <div className="mobile-reading-genre">{formatGenres(book.genre)}</div>
-                          )}
                           <div className="mobile-reading-title">{book.title}</div>
                           <div className="mobile-reading-author">{book.authors}</div>
+                          {book.genre && (
+                            <div className="mobile-reading-genre">{formatGenresPreserveOrder(book.genre)}</div>
+                          )}
                           {getBookPlankNames(book).length > 0 && (
                             <div className="mobile-reading-planks">
                               <span className="mobile-reading-planks-label">Boekenkasten:</span>
@@ -1344,11 +1347,11 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                               {book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}
                             </div>
                           )}
-                          {book.genre && (
-                            <div className="mobile-reading-genre">{formatGenres(book.genre)}</div>
-                          )}
                           <div className="mobile-reading-title">{book.title}</div>
                           <div className="mobile-reading-author">{book.authors}</div>
+                          {book.genre && (
+                            <div className="mobile-reading-genre">{formatGenresPreserveOrder(book.genre)}</div>
+                          )}
                           {getBookPlankNames(book).length > 0 && (
                             <div className="mobile-reading-planks">
                               <span className="mobile-reading-planks-label">Boekenkasten:</span>
@@ -1608,11 +1611,11 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                             {book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}
                           </div>
                         )}
-                        {book.genre && (
-                          <div className="mobile-reading-genre">{formatGenres(book.genre)}</div>
-                        )}
                         <div className="mobile-reading-title">{book.title}</div>
                         <div className="mobile-reading-author">{book.authors}</div>
+                        {book.genre && (
+                          <div className="mobile-reading-genre">{formatGenresPreserveOrder(book.genre)}</div>
+                        )}
                         {getBookPlankNames(book).length > 0 && (
                           <div className="mobile-reading-planks">
                             <span className="mobile-reading-planks-label">Boekenkasten:</span>

@@ -3,7 +3,7 @@ import { Book, ReadStatus, Shelf } from "../types";
 import { loadBooks, loadShelves, saveShelves, saveBooks, subscribeBooks, loadFriends, shareWithFriend, loadShelfViewSettings, saveShelfViewSettings } from "../storage";
 import { useBasePath, withBase } from "../routing";
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { parseGenres, formatGenres } from "../genreUtils";
+import { parseGenresPreserveOrder, parseGenres, formatGenres, formatGenresPreserveOrder } from "../genreUtils";
 
 const STATUS_MAP: Record<string, ReadStatus> = {
   "wil-ik-lezen": "wil-ik-lezen",
@@ -154,7 +154,6 @@ export function ShelfViewPage() {
   const effectiveGroupMode: ShelfGroupMode = useMemo(() => {
     if (!isCustomShelf && currentGroupMode === "status") return "none";
     if (!hasSeriesOnShelf && currentGroupMode === "series") return "none";
-    if (!hasGenresOnShelf && currentGroupMode === "genre") return "none";
     return currentGroupMode;
   }, [isCustomShelf, currentGroupMode, hasSeriesOnShelf, hasGenresOnShelf]);
 
@@ -448,7 +447,8 @@ export function ShelfViewPage() {
     const NO_GENRE_KEY = "__no_genre";
 
     shelfBooks.forEach((b) => {
-      const genres = parseGenres(b.genre);
+      // We gebruiken preserve-order zodat het "eerste genre" ook echt het primaire genre is.
+      const genres = parseGenresPreserveOrder(b.genre);
       // Als een boek meerdere genres heeft: we kiezen het "primaire" genre (eerste uit parseGenres).
       const key = genres[0] ?? NO_GENRE_KEY;
       const arr = groups.get(key) ?? [];
@@ -584,6 +584,9 @@ export function ShelfViewPage() {
           {book.authors && effectiveGroupMode !== "author" && (
             <span className="bookcase-book-author">{book.authors}</span>
           )}
+          {book.genre && effectiveGroupMode !== "genre" && (
+            <div className="bookcase-book-genre">{formatGenresPreserveOrder(book.genre)}</div>
+          )}
           {(book.seriesName?.trim() || book.seriesNumber != null) && (
             <div className="book-series-badge">
               {effectiveGroupMode === "series"
@@ -591,15 +594,12 @@ export function ShelfViewPage() {
                   ? `#${book.seriesNumber}`
                   : ""
                 : (
-                  <>
+                    <>
                     {book.seriesName?.trim()}
                     {book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}
-                  </>
-                )}
+                    </>
+                  )}
             </div>
-          )}
-          {book.genre && (
-            <div className="bookcase-book-genre">{formatGenres(book.genre)}</div>
           )}
           {isCustomShelf && effectiveGroupMode !== "status" && (
             <span className={`bookcase-book-status bookcase-book-status-${book.status}`} aria-label={`Status: ${STATUS_LABELS[book.status]}`}>
@@ -674,18 +674,16 @@ export function ShelfViewPage() {
                     Status
                   </button>
                 )}
-                {hasGenresOnShelf && (
-                  <button
-                    type="button"
-                    className={`shelf-view-sort-pill ${effectiveGroupMode === "genre" ? "active" : ""}`}
-                    onClick={() => {
-                      if (!shelfId) return;
-                      setGroupModeByShelf((prev) => ({ ...prev, [shelfId]: "genre" }));
-                    }}
-                  >
-                    Genre
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className={`shelf-view-sort-pill ${effectiveGroupMode === "genre" ? "active" : ""}`}
+                  onClick={() => {
+                    if (!shelfId) return;
+                    setGroupModeByShelf((prev) => ({ ...prev, [shelfId]: "genre" }));
+                  }}
+                >
+                  Genre
+                </button>
                 <button
                   type="button"
                   className={`shelf-view-sort-pill ${effectiveGroupMode === "author" ? "active" : ""}`}

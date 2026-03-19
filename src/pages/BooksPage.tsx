@@ -4,7 +4,7 @@ import { Book, ReadStatus, Shelf } from "../types";
 import { loadBooks, loadChallenge, loadShelves, saveShelves, saveBooks, subscribeBooks, addBookSnapshotsToMyLibrary } from "../storage";
 import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
-import { formatGenres } from "../genreUtils";
+import { formatGenresPreserveOrder, parseGenres, parseGenresPreserveOrder } from "../genreUtils";
 
 interface SearchResult {
   id: string;
@@ -111,6 +111,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   const [manualUseCustomSeries, setManualUseCustomSeries] = useState(false);
   const [manualCoverUrl, setManualCoverUrl] = useState("");
   const [manualGenre, setManualGenre] = useState("");
+  const [manualGenreQuickAdd, setManualGenreQuickAdd] = useState("");
+  const [activeGenreSuggestionIndex, setActiveGenreSuggestionIndex] = useState<number>(-1);
   const [manualShelfIds, setManualShelfIds] = useState<string[]>([]);
   const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
   const [addToShelfResult, setAddToShelfResult] = useState<SearchResult | null>(null);
@@ -185,6 +187,120 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     });
     return m;
   }, [existingSeries]);
+
+  const existingGenres = useMemo(() => {
+    const set = new Set<string>();
+    books.forEach((b) => {
+      parseGenres(b.genre).forEach((g) => set.add(g));
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "nl-NL"));
+  }, [books]);
+
+  const selectedGenres = useMemo(
+    () => parseGenresPreserveOrder(manualGenre),
+    [manualGenre]
+  );
+  const selectedGenreSet = useMemo(
+    () => new Set(selectedGenres),
+    [selectedGenres]
+  );
+
+  const selectedGenreLowerSet = useMemo(
+    () => new Set(selectedGenres.map((g) => g.toLowerCase())),
+    [selectedGenres]
+  );
+
+  const genrePillsForSelect = selectedGenres;
+
+  const genreQuickAddTrim = manualGenreQuickAdd.trim();
+  const genreQuickAddLower = genreQuickAddTrim.toLowerCase();
+
+  const genreQuickAddSuggestions = useMemo(() => {
+    if (!genreQuickAddLower) return [];
+    return existingGenres
+      .filter((g) => !selectedGenreLowerSet.has(g.toLowerCase()))
+      .filter((g) => g.toLowerCase().includes(genreQuickAddLower))
+      .slice(0, 8);
+  }, [existingGenres, genreQuickAddLower, selectedGenreLowerSet]);
+
+  const genreExactExisting = useMemo(() => {
+    if (!genreQuickAddLower) return null;
+    return existingGenres.find((g) => g.toLowerCase() === genreQuickAddLower) ?? null;
+  }, [existingGenres, genreQuickAddLower]);
+
+  const canAddNewGenre = useMemo(() => {
+    if (!genreQuickAddTrim) return false;
+    if (selectedGenreLowerSet.has(genreQuickAddLower)) return false;
+    // Als het exact bestaat, laat je het via de suggesties kiezen.
+    return !genreExactExisting;
+  }, [genreQuickAddTrim, genreQuickAddLower, selectedGenreLowerSet, genreExactExisting]);
+
+  const genreDropdownItems = useMemo(() => {
+    const items = genreQuickAddSuggestions.map((g) => ({
+      key: `s:${g.toLowerCase()}`,
+      label: g,
+      value: g
+    }));
+    if (canAddNewGenre) {
+      items.push({
+        key: `n:${genreQuickAddTrim.toLowerCase()}`,
+        label: `+ ${genreQuickAddTrim}`,
+        value: genreQuickAddTrim
+      });
+    }
+    return items;
+  }, [genreQuickAddSuggestions, canAddNewGenre, genreQuickAddTrim]);
+
+  function addGenreFromResolved(resolvedGenre: string) {
+    const resolved = resolvedGenre.trim();
+    if (!resolved) return;
+
+    const resolvedLower = resolved.toLowerCase();
+    if (selectedGenreLowerSet.has(resolvedLower)) return;
+
+    const current = selectedGenres;
+    if (current.length === 0) {
+      setManualGenre(resolved);
+      setManualGenreQuickAdd("");
+      return;
+    }
+
+    // Preserve order exactly as the user assigned it:
+    // new genre always goes to the end, never re-sorted.
+    const ordered = [...current, resolved];
+    setManualGenre(ordered.join(", "));
+    setManualGenreQuickAdd("");
+  }
+
+  function removeGenreEverywhere(genreToRemoveRaw: string) {
+    const genreToRemove = genreToRemoveRaw.trim();
+    if (!genreToRemove) return;
+
+    const targetLower = genreToRemove.toLowerCase();
+    if (
+      !window.confirm(
+        `Weet je zeker dat je genre "${genreToRemove}" uit alle boeken wilt verwijderen?`
+      )
+    ) {
+      return;
+    }
+
+    const updated = books.map((b) => {
+      if (!b.genre) return b;
+      const parts = parseGenresPreserveOrder(b.genre);
+      const filtered = parts.filter((p) => p.toLowerCase() !== targetLower);
+      if (filtered.length === parts.length) return b;
+      return { ...b, genre: filtered.length ? filtered.join(", ") : undefined };
+    });
+
+    persist(updated);
+
+    const nextSelected = parseGenresPreserveOrder(manualGenre).filter(
+      (p) => p.toLowerCase() !== targetLower
+    );
+    setManualGenre(nextSelected.join(", "));
+    setManualGenreQuickAdd("");
+  }
 
   const authorInputSuggestions = useMemo(() => {
     const trimmed = searchAuthor.trim();
@@ -1784,7 +1900,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     const seriesName = manualSeriesName.trim() || undefined;
     const seriesNum = manualSeriesNumber.trim() !== "" ? Number(manualSeriesNumber.trim()) || undefined : undefined;
     const coverUrl = manualCoverUrl.trim() || undefined;
-    const genre = manualGenre.trim() || undefined;
+    const finalGenre = parseGenresPreserveOrder(manualGenre).join(", ");
+    const genre = finalGenre || undefined;
     const shelfIds =
       effectiveStatus === "wil-ik-lezen" ||
       effectiveStatus === "aan-het-lezen" ||
@@ -2433,11 +2550,11 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                           {book.seriesNumber && ` #${book.seriesNumber}`}
                         </div>
                       )}
-                      {book.genre && (
-                        <div className="book-genre-badge">{formatGenres(book.genre)}</div>
-                      )}
                       <h3>{book.title}</h3>
                       <p className="book-authors">{book.authors}</p>
+                      {book.genre && (
+                        <div className="book-genre-badge">{formatGenresPreserveOrder(book.genre)}</div>
+                      )}
                       {getBookPlankNames(book).length > 0 && (
                         <div className="book-planks">
                           <span className="book-planks-label">Boekenkasten:</span>
@@ -3005,12 +3122,148 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
               </label>
               <label className="form-field">
                 <span>Genre (optioneel)</span>
-                <input
-                  type="text"
-                  value={manualGenre}
-                  onChange={(e) => setManualGenre(e.target.value)}
-                  placeholder="Bijv. Fantasy, Non-fictie"
-                />
+                <div className="genre-pill-container">
+                  {genrePillsForSelect.length === 0 ? (
+                    <span className="page-intro-small">Geen genres gevonden. Voeg er één toe.</span>
+                  ) : (
+                    genrePillsForSelect.map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        className={`genre-pill ${selectedGenreSet.has(g) ? "selected" : ""}`}
+                        onClick={() => {
+                          const isSelected = selectedGenreSet.has(g);
+                          const current = selectedGenres;
+                          const ordered = isSelected
+                            ? current.filter((x) => x !== g)
+                            : [...current, g].filter(Boolean);
+                          setManualGenre(ordered.join(", "));
+                        }}
+                      >
+                        {g}
+                        {selectedGenreSet.has(g) && <span className="genre-pill-x">×</span>}
+                        <span
+                          className="genre-pill-trash"
+                          role="button"
+                          tabIndex={0}
+                          title={`Verwijder genre "${g}" uit alle boeken`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            removeGenreEverywhere(g);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            removeGenreEverywhere(g);
+                          }}
+                        >
+                          🗑
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className="genre-pill-add-row">
+                  <div className="search-input-inner">
+                    <input
+                      type="text"
+                      value={manualGenreQuickAdd}
+                      onChange={(e) => {
+                        setManualGenreQuickAdd(e.target.value);
+                        setActiveGenreSuggestionIndex(-1);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "ArrowDown") {
+                          if (genreDropdownItems.length === 0) return;
+                          e.preventDefault();
+                          setActiveGenreSuggestionIndex((prev) =>
+                            prev < 0 ? 0 : Math.min(prev + 1, genreDropdownItems.length - 1)
+                          );
+                          return;
+                        }
+
+                        if (e.key === "ArrowUp") {
+                          if (genreDropdownItems.length === 0) return;
+                          e.preventDefault();
+                          setActiveGenreSuggestionIndex((prev) =>
+                            prev < 0 ? genreDropdownItems.length - 1 : Math.max(prev - 1, 0)
+                          );
+                          return;
+                        }
+
+                        if (e.key === "Escape") {
+                          if (activeGenreSuggestionIndex >= 0) {
+                            e.preventDefault();
+                            setActiveGenreSuggestionIndex(-1);
+                          }
+                          return;
+                        }
+
+                        if (e.key !== "Enter") return;
+                        e.preventDefault();
+
+                        if (genreDropdownItems.length > 0) {
+                          const idx =
+                            activeGenreSuggestionIndex >= 0
+                              ? activeGenreSuggestionIndex
+                              : 0;
+                          addGenreFromResolved(genreDropdownItems[idx]?.value ?? manualGenreQuickAdd.trim());
+                          setActiveGenreSuggestionIndex(-1);
+                          return;
+                        }
+
+                        const v = manualGenreQuickAdd.trim();
+                        if (!v) return;
+                        addGenreFromResolved(genreExactExisting ?? v);
+                      }}
+                      placeholder="Nieuwe genre toevoegen (optioneel)"
+                      className="search-input search-input-with-clear"
+                    />
+                    {manualGenreQuickAdd.trim() && (
+                      <button
+                        type="button"
+                        className="search-clear-button"
+                        onClick={() => setManualGenreQuickAdd("")}
+                        aria-label="Genre input wissen"
+                      >
+                        ×
+                      </button>
+                    )}
+                    {manualGenreQuickAdd.trim() && genreDropdownItems.length > 0 && (
+                      <div className="search-suggestions" role="listbox" aria-label="Genre suggesties">
+                        {genreDropdownItems.map((item, idx) => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            className={`search-suggestion-item${idx === activeGenreSuggestionIndex ? " active" : ""}`}
+                            onClick={() => {
+                              addGenreFromResolved(item.value);
+                              setActiveGenreSuggestionIndex(-1);
+                            }}
+                            role="option"
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="link-button"
+                    disabled={!manualGenreQuickAdd.trim()}
+                    onClick={() => {
+                      const v = manualGenreQuickAdd.trim();
+                      if (!v) return;
+                      const resolved = genreExactExisting ?? genreQuickAddSuggestions[0] ?? v;
+                      addGenreFromResolved(resolved);
+                    }}
+                  >
+                    + Voeg toe
+                  </button>
+                </div>
               </label>
               <label className="form-field">
                 <span>Link naar kaft (optioneel)</span>
