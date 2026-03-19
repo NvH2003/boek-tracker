@@ -1744,11 +1744,11 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     persist(updated);
   }
 
-  function openManualBookModal(prefill?: { title?: string; authors?: string }) {
+  function openManualBookModal(prefill?: { title?: string; authors?: string; seriesName?: string }) {
     setManualTitle(prefill?.title ? prefill.title : "");
     setManualAuthors(prefill?.authors ? prefill.authors : "");
     setManualPageCount("");
-    setManualSeriesName("");
+    setManualSeriesName(prefill?.seriesName ? prefill.seriesName : "");
     setManualSeriesNumber("");
     setManualUseCustomSeries(false);
     setManualCoverUrl("");
@@ -2340,6 +2340,22 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                     className="secondary-button"
                   >
                     Toevoegen
+                  </button>
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const baseTitle = split.title;
+                      const prefillTitle = normalizeSeriesPartTitleCase(baseTitle);
+                      openManualBookModal({
+                        title: prefillTitle,
+                        authors: r.authors,
+                        seriesName: split.seriesName
+                      });
+                    }}
+                  >
+                    Toevoegen met details
                   </button>
                 </div>
                   );
