@@ -15,6 +15,11 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const normalizedError = error.toLowerCase();
+  const accountExistsError =
+    normalizedError.includes("already registered") ||
+    normalizedError.includes("already exists") ||
+    normalizedError.includes("bestaat al");
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -44,6 +49,12 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
       </p>
       <form onSubmit={handleSubmit} className="card form-card">
         {error && <p className="form-error">{error}</p>}
+        {accountExistsError && (
+          <p className="form-footer">
+            Dit account bestaat al.{" "}
+            <Link to={withBase(basePath, "/login")}>Ga naar Inloggen</Link>
+          </p>
+        )}
         <label className="form-field">
           <span>Gebruikersnaam</span>
           <input

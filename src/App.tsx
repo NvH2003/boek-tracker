@@ -1,5 +1,6 @@
 import { Link, Route, Routes, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
+import { registerSW } from "virtual:pwa-register";
 import { getCurrentUsername, clearCurrentUser, initSupabaseSession } from "./auth";
 import { syncFromSupabase, pushLocalToSupabase, loadSharedInbox } from "./storage";
 import { isSupabaseConfigured } from "./supabase";
@@ -32,7 +33,11 @@ export function App() {
   const [hasSharedInboxItems, setHasSharedInboxItems] = useState<boolean>(
     () => loadSharedInbox().length > 0
   );
+  const [updateReady, setUpdateReady] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [applyUpdate, setApplyUpdate] = useState<((reloadPage?: boolean) => Promise<void>) | null>(null);
   const isCloudSyncEnabled = isSupabaseConfigured();
+  const appVersion = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
 
   useEffect(() => {
     (async () => {
@@ -42,6 +47,16 @@ export function App() {
         await pushLocalToSupabase();
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    const triggerUpdate = registerSW({
+      immediate: true,
+      onNeedRefresh() {
+        setUpdateReady(true);
+      }
+    });
+    setApplyUpdate(() => triggerUpdate);
   }, []);
 
   // In Capacitor: oude /mobile/*-links omzetten naar korte paden
@@ -115,6 +130,9 @@ export function App() {
             )}
           </div>
           <div className="app-header-right">
+            <span className="app-version-badge" title="App-versie">
+              v{appVersion}
+            </span>
             {isLoggedIn ? (
               <button onClick={handleLogout} className="secondary-button">
                 Uitloggen
@@ -128,6 +146,22 @@ export function App() {
         </header>
       )}
       <main className="app-main">
+        {updateReady && (
+          <div className="app-update-banner">
+            <span>Nieuwe versie beschikbaar.</span>
+            <button
+              type="button"
+              className="primary-button"
+              disabled={isUpdating}
+              onClick={async () => {
+                setIsUpdating(true);
+                if (applyUpdate) await applyUpdate(true);
+              }}
+            >
+              {isUpdating ? "Bijwerken..." : "Vernieuwen"}
+            </button>
+          </div>
+        )}
         {isLoggedIn && !isCloudSyncEnabled && (
           <div className="cloud-sync-warning">
             Wijzigingen worden nu alleen op dit apparaat opgeslagen. Cloud‑sync staat uit.
