@@ -381,7 +381,8 @@ export function ShelfViewPage() {
 
   function goToBook(bookId: string) {
     const from = shelfId ? `?from=boekenkast&shelfId=${shelfId}` : "";
-    navigate(withBase(basePath, `/boek/${bookId}${from}`));
+    const encodedBookId = encodeURIComponent(bookId);
+    navigate(withBase(basePath, `/boek/${encodedBookId}${from}`));
   }
 
   const groupedBySeries = useMemo(() => {

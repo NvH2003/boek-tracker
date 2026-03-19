@@ -26,7 +26,17 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   const basePath = useBasePath();
   const [books, setBooks] = useState<Book[]>(() => loadBooks());
 
-  const id = modalBookId ?? routeId;
+  function safeDecodeURIComponent(v: string | undefined): string | undefined {
+    if (v == null) return undefined;
+    try {
+      return decodeURIComponent(v);
+    } catch {
+      return v;
+    }
+  }
+
+  const decodedRouteId = safeDecodeURIComponent(routeId);
+  const id = modalBookId ?? decodedRouteId;
   const isModal = Boolean(modalBookId && onClose);
   const search = new URLSearchParams(location.search);
   const from = search.get("from");
@@ -37,7 +47,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     return subscribeBooks(setBooks);
   }, []);
 
-  const book = books.find((b) => b.id === id);
+  const book = id ? books.find((b) => b.id === id) : undefined;
 
   const [title, setTitle] = useState(book?.title ?? "");
   const [authors, setAuthors] = useState(book?.authors ?? "");

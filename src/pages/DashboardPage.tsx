@@ -863,7 +863,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                         return (
                           <div key={book.id} className={isCurrentlyReading ? "shelf-book-with-description" : ""}>
                             <Link
-                              to={withBase(basePath, `/boek/${book.id}`)}
+                              to={withBase(basePath, `/boek/${encodeURIComponent(book.id)}`)}
                               className="shelf-book-item-link"
                               onClick={(e) => e.stopPropagation()}
                             >
