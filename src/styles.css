@@ -4620,10 +4620,9 @@ select {
 }
 
 .bookcase-book-notes-indicator {
-  display: inline;
-  margin-top: 0;
-  margin-left: 0.25rem;
-  vertical-align: baseline;
+  display: inline-block;
+  margin-top: 0.15rem;
+  margin-left: 0.3rem;
   font-size: 0.65rem;
   line-height: 1;
   color: #fbbf24;

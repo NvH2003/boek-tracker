@@ -598,17 +598,12 @@ export function ShelfViewPage() {
               </div>
             )}
           </div>
-          <span className="bookcase-book-title">
-            {book.title}
-            {hasNotes && (
-              <span
-                className="bookcase-book-notes-indicator"
-                title="Notitie toegevoegd"
-              >
-                !
-              </span>
-            )}
-          </span>
+          <span className="bookcase-book-title">{book.title}</span>
+          {hasNotes && (
+            <span className="bookcase-book-notes-indicator" title="Notitie toegevoegd">
+              !
+            </span>
+          )}
           {book.authors && effectiveGroupMode !== "author" && (
             <span className="bookcase-book-author">{book.authors}</span>
           )}
