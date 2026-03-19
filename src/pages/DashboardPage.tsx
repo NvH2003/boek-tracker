@@ -4,6 +4,7 @@ import { loadBooks, loadShelves, saveShelves, loadChallenge, saveChallenge, save
 import { Book, Shelf, ReadStatus, ReadingChallenge } from "../types";
 import { useBasePath, withBase } from "../routing";
 import { BookDetailPage } from "./BookDetailPage";
+import { formatGenres } from "../genreUtils";
 
 function formatDate(date: Date): string {
   const year = date.getFullYear();
@@ -1080,6 +1081,9 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                               {book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}
                             </div>
                           )}
+                          {book.genre && (
+                            <div className="mobile-reading-genre">{formatGenres(book.genre)}</div>
+                          )}
                           <div className="mobile-reading-title">{book.title}</div>
                           <div className="mobile-reading-author">{book.authors}</div>
                           {getBookPlankNames(book).length > 0 && (
@@ -1339,6 +1343,9 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                               {book.seriesName}
                               {book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}
                             </div>
+                          )}
+                          {book.genre && (
+                            <div className="mobile-reading-genre">{formatGenres(book.genre)}</div>
                           )}
                           <div className="mobile-reading-title">{book.title}</div>
                           <div className="mobile-reading-author">{book.authors}</div>
@@ -1600,6 +1607,9 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                             {book.seriesName}
                             {book.seriesNumber != null ? ` #${book.seriesNumber}` : ""}
                           </div>
+                        )}
+                        {book.genre && (
+                          <div className="mobile-reading-genre">{formatGenres(book.genre)}</div>
                         )}
                         <div className="mobile-reading-title">{book.title}</div>
                         <div className="mobile-reading-author">{book.authors}</div>

@@ -4,6 +4,7 @@ import { Book, ReadStatus, Shelf } from "../types";
 import { loadBooks, loadChallenge, loadShelves, saveShelves, saveBooks, subscribeBooks, addBookSnapshotsToMyLibrary } from "../storage";
 import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
+import { formatGenres } from "../genreUtils";
 
 interface SearchResult {
   id: string;
@@ -109,6 +110,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   const [manualSeriesNumber, setManualSeriesNumber] = useState("");
   const [manualUseCustomSeries, setManualUseCustomSeries] = useState(false);
   const [manualCoverUrl, setManualCoverUrl] = useState("");
+  const [manualGenre, setManualGenre] = useState("");
   const [manualShelfIds, setManualShelfIds] = useState<string[]>([]);
   const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
   const [addToShelfResult, setAddToShelfResult] = useState<SearchResult | null>(null);
@@ -1744,7 +1746,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     persist(updated);
   }
 
-  function openManualBookModal(prefill?: { title?: string; authors?: string; seriesName?: string }) {
+  function openManualBookModal(prefill?: { title?: string; authors?: string; seriesName?: string; genre?: string }) {
     setManualTitle(prefill?.title ? prefill.title : "");
     setManualAuthors(prefill?.authors ? prefill.authors : "");
     setManualPageCount("");
@@ -1752,6 +1754,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     setManualSeriesNumber("");
     setManualUseCustomSeries(false);
     setManualCoverUrl("");
+    setManualGenre(prefill?.genre ? prefill.genre : "");
     const tbrShelf = shelves.find((s) => s.id === "wil-ik-lezen");
     setManualShelfIds(tbrShelf ? [tbrShelf.id] : []);
     setShowManualBookModal(true);
@@ -1781,6 +1784,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     const seriesName = manualSeriesName.trim() || undefined;
     const seriesNum = manualSeriesNumber.trim() !== "" ? Number(manualSeriesNumber.trim()) || undefined : undefined;
     const coverUrl = manualCoverUrl.trim() || undefined;
+    const genre = manualGenre.trim() || undefined;
     const shelfIds =
       effectiveStatus === "wil-ik-lezen" ||
       effectiveStatus === "aan-het-lezen" ||
@@ -1801,6 +1805,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       ...(seriesName && { seriesName }),
       ...(seriesNum != null && seriesNum > 0 && { seriesNumber: seriesNum }),
       ...(coverUrl && { coverUrl }),
+      ...(genre && { genre }),
       ...(shelfIds && { shelfIds })
     };
     persist([...books, newBook]);
@@ -2428,6 +2433,9 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                           {book.seriesNumber && ` #${book.seriesNumber}`}
                         </div>
                       )}
+                      {book.genre && (
+                        <div className="book-genre-badge">{formatGenres(book.genre)}</div>
+                      )}
                       <h3>{book.title}</h3>
                       <p className="book-authors">{book.authors}</p>
                       {getBookPlankNames(book).length > 0 && (
@@ -2993,6 +3001,15 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                   placeholder="Bijv. 1"
                   min={1}
                   className="manual-book-series-num"
+                />
+              </label>
+              <label className="form-field">
+                <span>Genre (optioneel)</span>
+                <input
+                  type="text"
+                  value={manualGenre}
+                  onChange={(e) => setManualGenre(e.target.value)}
+                  placeholder="Bijv. Fantasy, Non-fictie"
                 />
               </label>
               <label className="form-field">

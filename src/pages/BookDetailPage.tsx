@@ -48,6 +48,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   const [seriesNumber, setSeriesNumber] = useState<string>(
     book?.seriesNumber?.toString() ?? ""
   );
+  const [genre, setGenre] = useState<string>(book?.genre ?? "");
   const [order, setOrder] = useState<string>(
     book?.order?.toString() ?? ""
   );
@@ -191,6 +192,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
             notes: notes.trim() || undefined,
             seriesName: finalSeriesName,
             seriesNumber: finalSeriesName && seriesNumber ? Number(seriesNumber) : undefined,
+            genre: genre.trim() || undefined,
             order: !finalSeriesName && order ? Number(order) : undefined,
             coverUrl: coverUrl.trim() || undefined,
             description: description.trim() || undefined,
@@ -461,6 +463,15 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
             }}
             placeholder={seriesName ? "Bijv. 1" : "Bijv. 1"}
             min="1"
+          />
+        </div>
+        <div className="form-field">
+          <span>Genre (optioneel)</span>
+          <input
+            type="text"
+            value={genre}
+            onChange={(e) => setGenre(e.target.value)}
+            placeholder="Bijv. Fantasy, Non-fictie"
           />
         </div>
         <div className="form-field">

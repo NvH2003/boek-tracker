@@ -6,6 +6,8 @@ export interface Book {
   authors: string;
   coverUrl?: string;
   description?: string;
+  /** Genre van het boek (optioneel). Bewerkbaar via boekdetail. */
+  genre?: string;
   status: ReadStatus;
   pageCount?: number; // Aantal pagina's in het boek (optioneel)
   rating?: number;

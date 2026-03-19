@@ -3,6 +3,7 @@ import { Book, ReadStatus, Shelf } from "../types";
 import { loadBooks, loadShelves, saveShelves, saveBooks, subscribeBooks, loadFriends, shareWithFriend, loadShelfViewSettings, saveShelfViewSettings } from "../storage";
 import { useBasePath, withBase } from "../routing";
 import React, { useMemo, useState, useEffect, useRef } from "react";
+import { parseGenres, formatGenres } from "../genreUtils";
 
 const STATUS_MAP: Record<string, ReadStatus> = {
   "wil-ik-lezen": "wil-ik-lezen",
@@ -10,7 +11,7 @@ const STATUS_MAP: Record<string, ReadStatus> = {
   gelezen: "gelezen"
 };
 
-type ShelfGroupMode = "none" | "series" | "status" | "author";
+type ShelfGroupMode = "none" | "series" | "status" | "author" | "genre";
 
 const STATUS_ORDER: Record<ReadStatus, number> = {
   "wil-ik-lezen": 0,
@@ -138,6 +139,11 @@ export function ShelfViewPage() {
     [shelfBooks]
   );
 
+  const hasGenresOnShelf = useMemo(
+    () => shelfBooks.some((b) => parseGenres(b.genre).length > 0),
+    [shelfBooks]
+  );
+
   const currentGroupMode: ShelfGroupMode = useMemo(() => {
     if (!shelfId) return "series";
     return groupModeByShelf[shelfId] ?? "series";
@@ -148,8 +154,9 @@ export function ShelfViewPage() {
   const effectiveGroupMode: ShelfGroupMode = useMemo(() => {
     if (!isCustomShelf && currentGroupMode === "status") return "none";
     if (!hasSeriesOnShelf && currentGroupMode === "series") return "none";
+    if (!hasGenresOnShelf && currentGroupMode === "genre") return "none";
     return currentGroupMode;
-  }, [isCustomShelf, currentGroupMode, hasSeriesOnShelf]);
+  }, [isCustomShelf, currentGroupMode, hasSeriesOnShelf, hasGenresOnShelf]);
 
   function setShelfSortRules(rules: string[]) {
     if (!shelfId) return;
@@ -433,6 +440,35 @@ export function ShelfViewPage() {
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [shelfBooks, currentGroupMode]);
 
+  const groupedByGenre = useMemo(() => {
+    if (currentGroupMode !== "genre") return null;
+    if (shelfBooks.length === 0) return null;
+
+    const groups = new Map<string, Book[]>();
+    const NO_GENRE_KEY = "__no_genre";
+
+    shelfBooks.forEach((b) => {
+      const genres = parseGenres(b.genre);
+      // Als een boek meerdere genres heeft: we kiezen het "primaire" genre (eerste uit parseGenres).
+      const key = genres[0] ?? NO_GENRE_KEY;
+      const arr = groups.get(key) ?? [];
+      arr.push(b);
+      groups.set(key, arr);
+    });
+
+    return Array.from(groups.entries())
+      .map(([key, books]) => ({
+        key,
+        label: key === NO_GENRE_KEY ? "Zonder genre" : key,
+        books
+      }))
+      .sort((a, b) => {
+        if (a.key === NO_GENRE_KEY) return 1;
+        if (b.key === NO_GENRE_KEY) return -1;
+        return a.label.localeCompare(b.label);
+      });
+  }, [shelfBooks, currentGroupMode]);
+
   function renderBookcaseBook(book: Book) {
     const isSelected = selectedBookIds.has(book.id);
     return (
@@ -562,6 +598,9 @@ export function ShelfViewPage() {
                 )}
             </div>
           )}
+          {book.genre && (
+            <div className="bookcase-book-genre">{formatGenres(book.genre)}</div>
+          )}
           {isCustomShelf && effectiveGroupMode !== "status" && (
             <span className={`bookcase-book-status bookcase-book-status-${book.status}`} aria-label={`Status: ${STATUS_LABELS[book.status]}`}>
               {STATUS_PILL_LABELS[book.status]}
@@ -633,6 +672,18 @@ export function ShelfViewPage() {
                     }}
                   >
                     Status
+                  </button>
+                )}
+                {hasGenresOnShelf && (
+                  <button
+                    type="button"
+                    className={`shelf-view-sort-pill ${effectiveGroupMode === "genre" ? "active" : ""}`}
+                    onClick={() => {
+                      if (!shelfId) return;
+                      setGroupModeByShelf((prev) => ({ ...prev, [shelfId]: "genre" }));
+                    }}
+                  >
+                    Genre
                   </button>
                 )}
                 <button
@@ -793,6 +844,56 @@ export function ShelfViewPage() {
                               <React.Fragment key={book.id}>
                                 {renderBookcaseBook(book)}
                                 {shouldRenderSeriesSpacer && <div className="shelf-series-spacer" aria-hidden="true" />}
+                              </React.Fragment>
+                            );
+                          });
+                        })()}
+                      </div>
+                      <div className="bookcase-plank" aria-hidden="true" />
+                    </div>
+                  );
+                })}
+              </>
+            ) : effectiveGroupMode === "genre" && groupedByGenre && groupedByGenre.length > 0 ? (
+              <>
+                {groupedByGenre.map((group) => {
+                  const groupId = `${shelf.id}-genre-${group.key}`;
+                  const rules = groupSortRules[groupId] ?? [];
+                  return (
+                    <div key={group.key} className="shelf-series-group">
+                      <div className="shelf-series-header">
+                        <h2 className="shelf-series-title">{group.label}</h2>
+                        <button
+                          type="button"
+                          className="secondary-button shelf-sort-open-btn shelf-sort-open-btn-inline"
+                          onClick={() => setSortPopupTarget(groupId)}
+                        >
+                          Sorteer{rules.length > 0 ? ` (${rules.length})` : ""}
+                        </button>
+                      </div>
+                      <div className="bookcase-books">
+                        {(() => {
+                          const sorted = sortBooksByRules(group.books, rules);
+                          return sorted.map((book, index) => {
+                            const nextBook = sorted[index + 1];
+                            const differentSeries =
+                              nextBook != null &&
+                              (nextBook.seriesName?.trim() ?? "") !== (book.seriesName?.trim() ?? "");
+                            // Geen witruimte nodig tussen "zonder serie" en "met serie"
+                            // wanneer er geen shelf-sortering ingesteld is.
+                            const bookIsNoSeries = (book.seriesName?.trim() ?? "").length === 0;
+                            const nextIsNoSeries =
+                              nextBook != null ? (nextBook.seriesName?.trim() ?? "").length === 0 : false;
+                            const suppressBoundarySpacer =
+                              currentSortRules.length === 0 && bookIsNoSeries !== nextIsNoSeries;
+                            const shouldRenderSeriesSpacer = differentSeries && !suppressBoundarySpacer;
+
+                            return (
+                              <React.Fragment key={book.id}>
+                                {renderBookcaseBook(book)}
+                                {shouldRenderSeriesSpacer && (
+                                  <div className="shelf-series-spacer" aria-hidden="true" />
+                                )}
                               </React.Fragment>
                             );
                           });
