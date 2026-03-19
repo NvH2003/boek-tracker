@@ -1888,7 +1888,9 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     // Probeer naast/naast de huidige tab te openen (browser kan dit wel/niet toestaan).
     const width = Math.min(1100, Math.max(700, window.outerWidth - 80));
     const height = Math.min(900, Math.max(650, window.outerHeight - 120));
-    const leftBase = (window.screenX ?? window.screenLeft ?? 0) + window.outerWidth - width;
+    const leftGap = 120; // extra ruimte zodat het venster verder naar links landt
+    const leftBase =
+      (window.screenX ?? window.screenLeft ?? 0) + window.outerWidth - width - leftGap;
     const left = Math.max(0, leftBase);
     const topBase = (window.screenY ?? window.screenTop ?? 0) + 30;
     const top = Math.max(0, topBase);
