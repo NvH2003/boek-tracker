@@ -664,6 +664,8 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                   }
 
                   if (e.key !== "Enter") return;
+                  const v = genreQuickAdd.trim();
+                  if (!v) return;
                   e.preventDefault();
 
                   if (genreDropdownItems.length > 0) {
@@ -671,16 +673,13 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                       activeGenreSuggestionIndex >= 0
                         ? activeGenreSuggestionIndex
                         : 0;
-                    const valueToAdd = genreDropdownItems[idx]?.value ?? genreQuickAdd.trim();
+                    const valueToAdd = genreDropdownItems[idx]?.value ?? v;
                     addGenreFromResolved(valueToAdd);
                     setActiveGenreSuggestionIndex(-1);
                     return;
                   }
 
-                  const v = genreQuickAdd.trim();
-                  if (!v) return;
-                  const resolved = genreExactExisting ?? v;
-                  addGenreFromResolved(resolved);
+                  addGenreFromResolved(genreExactExisting ?? v);
                 }}
                 placeholder="Nieuwe genre toevoegen (optioneel)"
                 className="search-input search-input-with-clear"

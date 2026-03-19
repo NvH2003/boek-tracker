@@ -3202,6 +3202,9 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                         }
 
                         if (e.key !== "Enter") return;
+                        const v = manualGenreQuickAdd.trim();
+                        if (!v) return; // Laat standaard submit (formulier) gebeuren.
+
                         e.preventDefault();
 
                         if (genreDropdownItems.length > 0) {
@@ -3209,13 +3212,13 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                             activeGenreSuggestionIndex >= 0
                               ? activeGenreSuggestionIndex
                               : 0;
-                          addGenreFromResolved(genreDropdownItems[idx]?.value ?? manualGenreQuickAdd.trim());
+                          addGenreFromResolved(
+                            genreDropdownItems[idx]?.value ?? v
+                          );
                           setActiveGenreSuggestionIndex(-1);
                           return;
                         }
 
-                        const v = manualGenreQuickAdd.trim();
-                        if (!v) return;
                         addGenreFromResolved(genreExactExisting ?? v);
                       }}
                       placeholder="Nieuwe genre toevoegen (optioneel)"
