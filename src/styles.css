@@ -4621,8 +4621,8 @@ select {
 
 .bookcase-book-notes-indicator {
   display: inline-block;
-  margin-top: 0.15rem;
-  margin-left: 0.3rem;
+  margin-top: 0;
+  margin-left: 0;
   font-size: 0.65rem;
   line-height: 1;
   color: #fbbf24;
@@ -4631,6 +4631,7 @@ select {
   padding: 0.1rem 0.3rem;
   border-radius: 999px;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .mobile-reading-notes-indicator {
@@ -5142,7 +5143,7 @@ select {
 }
 
 .bookcase-book-title {
-  margin-top: 0.5rem;
+  margin-top: 0;
   font-size: 0.8rem;
   line-height: 1.25;
   color: #e2e8f0;
@@ -5150,6 +5151,18 @@ select {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bookcase-book-title-row {
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
 }
 
 .bookcase-book-author {
