@@ -271,6 +271,18 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     return `https://www.goodreads.com/search?q=${encodeURIComponent(q)}`;
   }
 
+  function openInAdjacentWindow(url: string) {
+    // Probeer naast/naast de huidige tab te openen (browser kan dit wel/niet toestaan).
+    const width = Math.min(1100, Math.max(700, window.outerWidth - 80));
+    const height = Math.min(900, Math.max(650, window.outerHeight - 120));
+    const leftBase = (window.screenX ?? window.screenLeft ?? 0) + window.outerWidth - width;
+    const left = Math.max(0, leftBase);
+    const topBase = (window.screenY ?? window.screenTop ?? 0) + 30;
+    const top = Math.max(0, topBase);
+    const features = `popup=true,width=${Math.round(width)},height=${Math.round(height)},left=${Math.round(left)},top=${Math.round(top)}`;
+    return window.open(url, "goodreads_genre", features);
+  }
+
   function handleStatusChange(newStatus: ReadStatus) {
     setStatus(newStatus);
     if (!book) return;
@@ -606,10 +618,20 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
           {goodreadsGenreUrl && (
             <a
               href={goodreadsGenreUrl}
-              target="_blank"
               rel="noreferrer"
               className="link-button"
               aria-label="Zoek dit boek op Goodreads om genres te vinden"
+              onClick={(e) => {
+                e.preventDefault();
+                const opened = openInAdjacentWindow(goodreadsGenreUrl);
+                if (!opened) {
+                  window.open(
+                    goodreadsGenreUrl,
+                    "_blank",
+                    "noopener,noreferrer"
+                  );
+                }
+              }}
             >
               Goodreads
             </a>
