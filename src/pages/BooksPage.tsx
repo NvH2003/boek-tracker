@@ -3115,8 +3115,9 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                   type="number"
                   value={manualSeriesNumber}
                   onChange={(e) => setManualSeriesNumber(e.target.value)}
-                  placeholder="Bijv. 1"
+                  placeholder="Bijv. 1.5"
                   min={1}
+                  step="any"
                   className="manual-book-series-num"
                 />
               </label>

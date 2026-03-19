@@ -4619,6 +4619,51 @@ select {
   resize: vertical;
 }
 
+.bookcase-book-notes-indicator {
+  display: inline-block;
+  margin-top: 0.15rem;
+  margin-left: 0.3rem;
+  font-size: 0.65rem;
+  line-height: 1;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  padding: 0.1rem 0.3rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.mobile-reading-notes-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.35rem;
+  font-size: 0.65rem;
+  line-height: 1;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  padding: 0.05rem 0.3rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.shelf-book-notes-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.15rem;
+  margin-left: 0.25rem;
+  font-size: 0.65rem;
+  line-height: 1;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  padding: 0.05rem 0.3rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
 .cover-preview {
   margin-top: 0.5rem;
   display: flex;

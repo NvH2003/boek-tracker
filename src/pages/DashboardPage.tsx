@@ -894,6 +894,11 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                                 >
                                   {book.title}
                                 </div>
+                                {!!(book.notes ?? "").trim() && (
+                                  <span className="shelf-book-notes-indicator" title="Notitie toegevoegd">
+                                    !
+                                  </span>
+                                )}
                               </div>
                             </Link>
                             {isCurrentlyReading && book.description && (
@@ -1085,7 +1090,14 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                             </div>
                           )}
                           <div className="mobile-reading-title">{book.title}</div>
-                          <div className="mobile-reading-author">{book.authors}</div>
+                          <div className="mobile-reading-author">
+                            {book.authors}
+                            {!!(book.notes ?? "").trim() && (
+                              <span className="mobile-reading-notes-indicator" title="Notitie toegevoegd">
+                                !
+                              </span>
+                            )}
+                          </div>
                           {book.genre && (
                             <div className="mobile-reading-genre">{formatGenresPreserveOrder(book.genre)}</div>
                           )}
@@ -1348,7 +1360,14 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                             </div>
                           )}
                           <div className="mobile-reading-title">{book.title}</div>
-                          <div className="mobile-reading-author">{book.authors}</div>
+                          <div className="mobile-reading-author">
+                            {book.authors}
+                            {!!(book.notes ?? "").trim() && (
+                              <span className="mobile-reading-notes-indicator" title="Notitie toegevoegd">
+                                !
+                              </span>
+                            )}
+                          </div>
                           {book.genre && (
                             <div className="mobile-reading-genre">{formatGenresPreserveOrder(book.genre)}</div>
                           )}
@@ -1612,7 +1631,14 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                           </div>
                         )}
                         <div className="mobile-reading-title">{book.title}</div>
-                        <div className="mobile-reading-author">{book.authors}</div>
+                        <div className="mobile-reading-author">
+                          {book.authors}
+                          {!!(book.notes ?? "").trim() && (
+                            <span className="mobile-reading-notes-indicator" title="Notitie toegevoegd">
+                              !
+                            </span>
+                          )}
+                        </div>
                         {book.genre && (
                           <div className="mobile-reading-genre">{formatGenresPreserveOrder(book.genre)}</div>
                         )}

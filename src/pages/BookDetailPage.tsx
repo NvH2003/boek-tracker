@@ -576,8 +576,9 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                 setOrder(e.target.value);
               }
             }}
-            placeholder={seriesName ? "Bijv. 1" : "Bijv. 1"}
+            placeholder={seriesName ? "Bijv. 1.5" : "Bijv. 1.5"}
             min="1"
+            step="any"
           />
         </div>
         <div className="form-field">

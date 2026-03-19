@@ -471,6 +471,7 @@ export function ShelfViewPage() {
 
   function renderBookcaseBook(book: Book) {
     const isSelected = selectedBookIds.has(book.id);
+    const hasNotes = (book.notes ?? "").trim().length > 0;
     return (
       <div
         key={book.id}
@@ -580,7 +581,14 @@ export function ShelfViewPage() {
               </div>
             )}
           </div>
-          <span className="bookcase-book-title">{book.title}</span>
+          <span className="bookcase-book-title">
+            {book.title}
+          </span>
+          {hasNotes && (
+            <span className="bookcase-book-notes-indicator" title="Notitie toegevoegd">
+              !
+            </span>
+          )}
           {book.authors && effectiveGroupMode !== "author" && (
             <span className="bookcase-book-author">{book.authors}</span>
           )}
