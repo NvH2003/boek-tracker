@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Book, Shelf } from "../types";
-import { loadBooks, loadShelves, saveShelves, subscribeBooks } from "../storage";
+import { loadBooks, loadShelves, saveShelves, subscribeBooks, subscribeShelves } from "../storage";
 import { useBasePath, withBase } from "../routing";
 
 type ShelfSortMode = "name" | "booksDesc" | "booksAsc";
@@ -17,6 +17,10 @@ export function ShelvesPage() {
 
   useEffect(() => {
     return subscribeBooks(setBooks);
+  }, []);
+
+  useEffect(() => {
+    return subscribeShelves(setShelves);
   }, []);
 
   function persist(newShelves: Shelf[]) {

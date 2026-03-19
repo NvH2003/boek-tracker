@@ -1,7 +1,7 @@
 import { FormEvent, useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Book, ReadStatus, Shelf } from "../types";
-import { loadBooks, loadChallenge, loadShelves, saveShelves, saveBooks, subscribeBooks, addBookSnapshotsToMyLibrary } from "../storage";
+import { loadBooks, loadChallenge, loadShelves, saveShelves, saveBooks, subscribeBooks, subscribeShelves, addBookSnapshotsToMyLibrary } from "../storage";
 import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
 
@@ -260,6 +260,10 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   // Sync books tussen tabs/shells (web ↔ mobile)
   useEffect(() => {
     return subscribeBooks(setBooks);
+  }, []);
+
+  useEffect(() => {
+    return subscribeShelves(setShelves);
   }, []);
 
   // Hydrate search cache vanuit localStorage (1x)

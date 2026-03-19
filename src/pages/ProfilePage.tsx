@@ -12,6 +12,7 @@ import { useBasePath, withBase } from "../routing";
 import { useZoom } from "../ZoomContext";
 import {
   loadShelves,
+  subscribeShelves,
   saveShelves,
   loadFriends,
   getPendingReceivedRequests,
@@ -184,6 +185,10 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect(() => {
+    return subscribeShelves(setShelves);
   }, []);
 
   function persist(next: Shelf[]) {
