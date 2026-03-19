@@ -3124,6 +3124,17 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
               </label>
               <label className="form-field">
                 <span>Genre (optioneel)</span>
+                {getGoodreadsSearchUrl(manualTitle, manualAuthors) && (
+                  <a
+                    href={getGoodreadsSearchUrl(manualTitle, manualAuthors) ?? undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="link-button"
+                    aria-label="Zoek dit boek op Goodreads om genres te vinden"
+                  >
+                    Goodreads (genres)
+                  </a>
+                )}
                 <div className="genre-pill-container">
                   {genrePillsForSelect.length === 0 ? (
                     <span className="page-intro-small">Geen genres gevonden. Voeg er één toe.</span>

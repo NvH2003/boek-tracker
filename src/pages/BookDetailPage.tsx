@@ -263,6 +263,14 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     }
   }
 
+  function getGoodreadsSearchUrl(t?: string, a?: string): string | null {
+    const title = t?.trim();
+    const authors = a?.trim();
+    if (!title && !authors) return null;
+    const q = [title, authors].filter(Boolean).join(" ");
+    return `https://www.goodreads.com/search?q=${encodeURIComponent(q)}`;
+  }
+
   function handleStatusChange(newStatus: ReadStatus) {
     setStatus(newStatus);
     if (!book) return;
@@ -336,6 +344,8 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       navigate(withBase(basePath, "/boeken"));
     }
   }
+
+  const goodreadsGenreUrl = getGoodreadsSearchUrl(title, authors);
 
   return (
     <div className={`page ${isModal ? "book-detail-modal-content" : ""}`}>
@@ -593,6 +603,17 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         </div>
         <div className="form-field">
           <span>Genre (optioneel)</span>
+          {goodreadsGenreUrl && (
+            <a
+              href={goodreadsGenreUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="link-button"
+              aria-label="Zoek dit boek op Goodreads om genres te vinden"
+            >
+              Goodreads
+            </a>
+          )}
           <div className="genre-pill-container">
             {genrePillsForSelect.length === 0 ? (
               <span className="page-intro-small">Geen genres gevonden. Voeg er één toe.</span>
