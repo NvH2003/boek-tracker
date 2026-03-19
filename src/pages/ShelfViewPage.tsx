@@ -185,9 +185,21 @@ export function ShelfViewPage() {
   const [shareSelectedError, setShareSelectedError] = useState("");
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressNextClickRef = useRef(false);
+  const suppressNextClickResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressBookIdRef = useRef<string | null>(null);
   const [selectionBarPosition, setSelectionBarPosition] = useState({ bottom: 96, leftPercent: 50 });
   const selectionBarDragRef = useRef<{ startY: number; startBottom: number; startX: number; startLeft: number } | null>(null);
+
+  function setSuppressNextClickForMs(ms: number) {
+    suppressNextClickRef.current = true;
+    if (suppressNextClickResetTimerRef.current) {
+      clearTimeout(suppressNextClickResetTimerRef.current);
+    }
+    suppressNextClickResetTimerRef.current = setTimeout(() => {
+      suppressNextClickRef.current = false;
+      suppressNextClickResetTimerRef.current = null;
+    }, ms);
+  }
 
   function handleSelectionBarPointerDown(e: React.PointerEvent) {
     e.preventDefault();
@@ -497,7 +509,7 @@ export function ShelfViewPage() {
               const id = longPressBookIdRef.current;
               if (id) {
                 enterSelectionModeWith(id);
-                suppressNextClickRef.current = true;
+                setSuppressNextClickForMs(900);
                 longPressBookIdRef.current = null;
               }
               longPressTimerRef.current = null;
@@ -524,7 +536,7 @@ export function ShelfViewPage() {
               const id = longPressBookIdRef.current;
               if (id) {
                 enterSelectionModeWith(id);
-                suppressNextClickRef.current = true;
+                setSuppressNextClickForMs(900);
                 longPressBookIdRef.current = null;
               }
               longPressTimerRef.current = null;
@@ -549,6 +561,10 @@ export function ShelfViewPage() {
               e.preventDefault();
               e.stopPropagation();
               suppressNextClickRef.current = false;
+              if (suppressNextClickResetTimerRef.current) {
+                clearTimeout(suppressNextClickResetTimerRef.current);
+                suppressNextClickResetTimerRef.current = null;
+              }
               return;
             }
             if (selectionMode) {
