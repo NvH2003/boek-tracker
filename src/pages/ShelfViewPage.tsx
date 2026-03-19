@@ -780,11 +780,19 @@ export function ShelfViewPage() {
                           const sorted = sortBooksByRules(group.books, rules);
                           return sorted.map((book, index) => {
                             const nextBook = sorted[index + 1];
-                            const differentSeries = nextBook != null && (nextBook.seriesName?.trim() ?? "") !== (book.seriesName?.trim() ?? "");
+                            const differentSeries =
+                              nextBook != null &&
+                              (nextBook.seriesName?.trim() ?? "") !== (book.seriesName?.trim() ?? "");
+                            // Geen witruimte nodig tussen "zonder serie" en "met serie"
+                            // wanneer er geen shelf-sortering ingesteld is.
+                            const bookIsNoSeries = (book.seriesName?.trim() ?? "").length === 0;
+                            const nextIsNoSeries = nextBook != null ? (nextBook.seriesName?.trim() ?? "").length === 0 : false;
+                            const suppressBoundarySpacer = currentSortRules.length === 0 && bookIsNoSeries !== nextIsNoSeries;
+                            const shouldRenderSeriesSpacer = differentSeries && !suppressBoundarySpacer;
                             return (
                               <React.Fragment key={book.id}>
                                 {renderBookcaseBook(book)}
-                                {differentSeries && <div className="shelf-series-spacer" aria-hidden="true" />}
+                                {shouldRenderSeriesSpacer && <div className="shelf-series-spacer" aria-hidden="true" />}
                               </React.Fragment>
                             );
                           });
@@ -813,11 +821,19 @@ export function ShelfViewPage() {
                           const sorted = sortBooksByRules(group.books, rules);
                           return sorted.map((book, index) => {
                             const nextBook = sorted[index + 1];
-                            const differentSeries = nextBook != null && (nextBook.seriesName?.trim() ?? "") !== (book.seriesName?.trim() ?? "");
+                            const differentSeries =
+                              nextBook != null &&
+                              (nextBook.seriesName?.trim() ?? "") !== (book.seriesName?.trim() ?? "");
+                            // Geen witruimte nodig tussen "zonder serie" en "met serie"
+                            // wanneer er geen shelf-sortering ingesteld is.
+                            const bookIsNoSeries = (book.seriesName?.trim() ?? "").length === 0;
+                            const nextIsNoSeries = nextBook != null ? (nextBook.seriesName?.trim() ?? "").length === 0 : false;
+                            const suppressBoundarySpacer = currentSortRules.length === 0 && bookIsNoSeries !== nextIsNoSeries;
+                            const shouldRenderSeriesSpacer = differentSeries && !suppressBoundarySpacer;
                             return (
                               <React.Fragment key={book.id}>
                                 {renderBookcaseBook(book)}
-                                {differentSeries && <div className="shelf-series-spacer" aria-hidden="true" />}
+                                {shouldRenderSeriesSpacer && <div className="shelf-series-spacer" aria-hidden="true" />}
                               </React.Fragment>
                             );
                           });
@@ -846,11 +862,19 @@ export function ShelfViewPage() {
                           const sorted = sortBooksByRules(group.books, rules);
                           return sorted.map((book, index) => {
                             const nextBook = sorted[index + 1];
-                            const differentSeries = nextBook != null && (nextBook.seriesName?.trim() ?? "") !== (book.seriesName?.trim() ?? "");
+                            const differentSeries =
+                              nextBook != null &&
+                              (nextBook.seriesName?.trim() ?? "") !== (book.seriesName?.trim() ?? "");
+                            // Geen witruimte nodig tussen "zonder serie" en "met serie"
+                            // wanneer er geen shelf-sortering ingesteld is.
+                            const bookIsNoSeries = (book.seriesName?.trim() ?? "").length === 0;
+                            const nextIsNoSeries = nextBook != null ? (nextBook.seriesName?.trim() ?? "").length === 0 : false;
+                            const suppressBoundarySpacer = currentSortRules.length === 0 && bookIsNoSeries !== nextIsNoSeries;
+                            const shouldRenderSeriesSpacer = differentSeries && !suppressBoundarySpacer;
                             return (
                               <React.Fragment key={book.id}>
                                 {renderBookcaseBook(book)}
-                                {differentSeries && <div className="shelf-series-spacer" aria-hidden="true" />}
+                                {shouldRenderSeriesSpacer && <div className="shelf-series-spacer" aria-hidden="true" />}
                               </React.Fragment>
                             );
                           });
@@ -865,11 +889,19 @@ export function ShelfViewPage() {
               <div className="bookcase-books">
                 {shelfBooks.map((book, index) => {
                   const nextBook = shelfBooks[index + 1];
-                  const differentSeries = nextBook != null && (nextBook.seriesName?.trim() ?? "") !== (book.seriesName?.trim() ?? "");
+                  const differentSeries =
+                    nextBook != null &&
+                    (nextBook.seriesName?.trim() ?? "") !== (book.seriesName?.trim() ?? "");
+                  // Geen witruimte nodig tussen "zonder serie" en "met serie"
+                  // wanneer er geen shelf-sortering ingesteld is.
+                  const bookIsNoSeries = (book.seriesName?.trim() ?? "").length === 0;
+                  const nextIsNoSeries = nextBook != null ? (nextBook.seriesName?.trim() ?? "").length === 0 : false;
+                  const suppressBoundarySpacer = currentSortRules.length === 0 && bookIsNoSeries !== nextIsNoSeries;
+                  const shouldRenderSeriesSpacer = differentSeries && !suppressBoundarySpacer;
                   return (
                     <React.Fragment key={book.id}>
                       {renderBookcaseBook(book)}
-                      {differentSeries && <div className="shelf-series-spacer" aria-hidden="true" />}
+                      {shouldRenderSeriesSpacer && <div className="shelf-series-spacer" aria-hidden="true" />}
                     </React.Fragment>
                   );
                 })}
