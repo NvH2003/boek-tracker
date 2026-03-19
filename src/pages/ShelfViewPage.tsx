@@ -1,6 +1,6 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { Book, ReadStatus, Shelf } from "../types";
-import { loadBooks, loadShelves, saveShelves, saveBooks, subscribeBooks, subscribeShelves, loadFriends, shareWithFriend, loadShelfViewSettings, saveShelfViewSettings } from "../storage";
+import { loadBooks, loadShelves, saveShelves, saveBooks, subscribeBooks, loadFriends, shareWithFriend, loadShelfViewSettings, saveShelfViewSettings } from "../storage";
 import { useBasePath, withBase } from "../routing";
 import React, { useMemo, useState, useEffect, useRef } from "react";
 
@@ -102,10 +102,6 @@ export function ShelfViewPage() {
 
   useEffect(() => {
     return subscribeBooks(setBooks);
-  }, []);
-
-  useEffect(() => {
-    return subscribeShelves(setShelves);
   }, []);
 
   useEffect(() => {

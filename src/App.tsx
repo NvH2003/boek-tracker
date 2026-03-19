@@ -1,5 +1,5 @@
 import { Link, Route, Routes, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { getCurrentUsername, clearCurrentUser, initSupabaseSession } from "./auth";
 import { syncFromSupabase, pushLocalToSupabase, loadSharedInbox } from "./storage";
 import { isSupabaseConfigured } from "./supabase";
@@ -32,59 +32,17 @@ export function App() {
   const [hasSharedInboxItems, setHasSharedInboxItems] = useState<boolean>(
     () => loadSharedInbox().length > 0
   );
-  const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "ok" | "error">("idle");
-  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
-  const syncRunningRef = useRef(false);
   const isCloudSyncEnabled = isSupabaseConfigured();
-
-  function formatSyncTime(date: Date): string {
-    return date.toLocaleTimeString("nl-NL", {
-      hour: "2-digit",
-      minute: "2-digit"
-    });
-  }
-
-  async function runCloudSync() {
-    if (!isCloudSyncEnabled || !isLoggedIn) return;
-    if (syncRunningRef.current) return;
-    syncRunningRef.current = true;
-    setSyncStatus("syncing");
-    try {
-      await syncFromSupabase();
-      await pushLocalToSupabase();
-      setLastSyncedAt(new Date());
-      setSyncStatus("ok");
-    } catch {
-      setSyncStatus("error");
-    } finally {
-      syncRunningRef.current = false;
-    }
-  }
 
   useEffect(() => {
     (async () => {
       const restored = await initSupabaseSession();
       if (restored) {
-        await runCloudSync();
+        await syncFromSupabase();
+        await pushLocalToSupabase();
       }
     })();
   }, []);
-
-  useEffect(() => {
-    if (!isCloudSyncEnabled || !isLoggedIn) return;
-
-    runCloudSync();
-
-    const intervalId = window.setInterval(runCloudSync, 2 * 60 * 1000);
-    window.addEventListener("focus", runCloudSync);
-    window.addEventListener("online", runCloudSync);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", runCloudSync);
-      window.removeEventListener("online", runCloudSync);
-    };
-  }, [isCloudSyncEnabled, isLoggedIn]);
 
   // In Capacitor: oude /mobile/*-links omzetten naar korte paden
   useEffect(() => {
@@ -157,17 +115,6 @@ export function App() {
             )}
           </div>
           <div className="app-header-right">
-            {isLoggedIn && isCloudSyncEnabled && (
-              <span className={`cloud-sync-indicator cloud-sync-indicator-${syncStatus}`}>
-                {syncStatus === "syncing"
-                  ? "Synchroniseren..."
-                  : syncStatus === "ok"
-                    ? `Gesynchroniseerd om ${lastSyncedAt ? formatSyncTime(lastSyncedAt) : "--:--"}`
-                    : syncStatus === "error"
-                      ? "Syncfout"
-                      : "Cloud-sync actief"}
-              </span>
-            )}
             {isLoggedIn ? (
               <button onClick={handleLogout} className="secondary-button">
                 Uitloggen

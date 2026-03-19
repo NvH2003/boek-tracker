@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { loadBooks, loadShelves, saveShelves, loadChallenge, saveChallenge, saveBooks, subscribeBooks, subscribeShelves, loadFriends, shareWithFriend } from "../storage";
+import { loadBooks, loadShelves, saveShelves, loadChallenge, saveChallenge, saveBooks, subscribeBooks, loadFriends, shareWithFriend } from "../storage";
 import { Book, Shelf, ReadStatus, ReadingChallenge } from "../types";
 import { useBasePath, withBase } from "../routing";
 import { BookDetailPage } from "./BookDetailPage";
@@ -243,10 +243,6 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
   // Sync books tussen tabs/shells (web ↔ mobile)
   useEffect(() => {
     return subscribeBooks(setBooks);
-  }, []);
-
-  useEffect(() => {
-    return subscribeShelves(setShelves);
   }, []);
 
   // Als we een vaste mode hebben (desktop/mobile), forceer die view.

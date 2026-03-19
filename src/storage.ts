@@ -84,14 +84,8 @@ export async function syncFromSupabase(): Promise<void> {
   if (rows) {
     const byKey: Record<string, unknown> = {};
     for (const r of rows) byKey[r.key] = r.value;
-    if (byKey.books != null) {
-      window.localStorage.setItem(booksKey(), JSON.stringify(byKey.books));
-      notifyBooksUpdated();
-    }
-    if (byKey.shelves != null) {
-      window.localStorage.setItem(shelvesKey(), JSON.stringify(byKey.shelves));
-      notifyShelvesUpdated();
-    }
+    if (byKey.books != null) window.localStorage.setItem(booksKey(), JSON.stringify(byKey.books));
+    if (byKey.shelves != null) window.localStorage.setItem(shelvesKey(), JSON.stringify(byKey.shelves));
     if (byKey.challenge != null) window.localStorage.setItem(challengeKey(), JSON.stringify(byKey.challenge));
     if (byKey.friends != null) window.localStorage.setItem(friendsKey(username), JSON.stringify(byKey.friends));
     if (byKey.shelf_view_settings != null) {
@@ -171,11 +165,8 @@ export interface FriendRequest {
 
 const BOOKS_UPDATED_EVENT = "bt_books_updated_v1";
 const BOOKS_CHANNEL = "bt_books_channel_v1";
-const SHELVES_UPDATED_EVENT = "bt_shelves_updated_v1";
-const SHELVES_CHANNEL = "bt_shelves_channel_v1";
 
 let booksChannel: BroadcastChannel | null = null;
-let shelvesChannel: BroadcastChannel | null = null;
 
 function getBooksChannel(): BroadcastChannel | null {
   try {
@@ -189,30 +180,12 @@ function getBooksChannel(): BroadcastChannel | null {
   }
 }
 
-function getShelvesChannel(): BroadcastChannel | null {
-  try {
-    if (typeof BroadcastChannel === "undefined") return null;
-    if (!shelvesChannel) {
-      shelvesChannel = new BroadcastChannel(SHELVES_CHANNEL);
-    }
-    return shelvesChannel;
-  } catch {
-    return null;
-  }
-}
-
 function notifyBooksUpdated() {
   // Same-tab listeners
   window.dispatchEvent(new Event(BOOKS_UPDATED_EVENT));
   // Cross-tab listeners
   const bc = getBooksChannel();
   bc?.postMessage({ type: "books_updated" });
-}
-
-function notifyShelvesUpdated() {
-  window.dispatchEvent(new Event(SHELVES_UPDATED_EVENT));
-  const bc = getShelvesChannel();
-  bc?.postMessage({ type: "shelves_updated" });
 }
 
 export function loadBooks(): Book[] {
@@ -293,51 +266,10 @@ export function loadShelves(): Shelf[] {
 
 export function saveShelves(shelves: Shelf[]) {
   window.localStorage.setItem(shelvesKey(), JSON.stringify(shelves));
-  notifyShelvesUpdated();
   const userId = getCurrentUserId();
   if (isSupabaseConfigured() && supabase && userId) {
     supabase.from("user_data").upsert({ user_id: userId, key: "shelves", value: shelves }, { onConflict: "user_id,key" }).then(() => {});
   }
-}
-
-export function subscribeShelves(onShelves: (shelves: Shelf[]) => void): () => void {
-  function emit() {
-    onShelves(loadShelves());
-  }
-
-  function onStorage(e: StorageEvent) {
-    if (e.key === shelvesKey()) {
-      emit();
-    }
-  }
-
-  function onLocalEvent() {
-    emit();
-  }
-
-  const bc = getShelvesChannel();
-  const onMessage =
-    bc
-      ? (event: MessageEvent) => {
-          if (event.data?.type === "shelves_updated") {
-            emit();
-          }
-        }
-      : null;
-
-  window.addEventListener("storage", onStorage);
-  window.addEventListener(SHELVES_UPDATED_EVENT, onLocalEvent);
-  if (bc && onMessage) {
-    bc.addEventListener("message", onMessage);
-  }
-
-  return () => {
-    window.removeEventListener("storage", onStorage);
-    window.removeEventListener(SHELVES_UPDATED_EVENT, onLocalEvent);
-    if (bc && onMessage) {
-      bc.removeEventListener("message", onMessage);
-    }
-  };
 }
 
 export function loadChallenge(): ReadingChallenge | null {
