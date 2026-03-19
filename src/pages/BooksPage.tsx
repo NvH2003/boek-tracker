@@ -2544,10 +2544,12 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                             window.setTimeout(() => setToast(""), 2500);
                             return;
                           }
-                          addFromSearch(addToShelfResult, shelf.id);
-                          setShowAddToShelfModal(false);
-                          setAddToShelfResult(null);
-                          setAddToShelfSelectedShelfIds(new Set());
+                          setAddToShelfSelectedShelfIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(shelf.id)) next.delete(shelf.id);
+                            else next.add(shelf.id);
+                            return next;
+                          });
                         }}
                       >
                         {shelf.name}
