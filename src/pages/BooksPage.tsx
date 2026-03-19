@@ -1601,6 +1601,10 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     const existing = findExistingBookForResult(result);
     const statusFromShelf = STATUS_BY_SHELF_ID[targetShelfId];
     const shelfName = shelves.find((s) => s.id === targetShelfId)?.name ?? "boekenkast";
+    const showAddedToast = () => {
+      setToast(`Toegevoegd: "${result.title}" staat nu op "${shelfName}".`);
+      window.setTimeout(() => setToast(""), 3000);
+    };
 
     // Als het boek al bestaat in de bibliotheek
     if (existing) {
@@ -1660,8 +1664,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       };
       const next = books.map((b) => (b.id === existing.id ? updated : b));
       persist(next);
-      setToast(`Boek toegevoegd aan "${shelfName}".`);
-      window.setTimeout(() => setToast(""), 2500);
+      showAddedToast();
       return;
     }
 
@@ -1701,8 +1704,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       ...(shelfIds && { shelfIds })
     };
     persist([...books, newBook]);
-    setToast(`Boek toegevoegd aan "${shelfName}".`);
-    window.setTimeout(() => setToast(""), 2500);
+    showAddedToast();
   }
 
   function startAddFromSearch(result: SearchResult) {
@@ -2542,12 +2544,10 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                             window.setTimeout(() => setToast(""), 2500);
                             return;
                           }
-                          setAddToShelfSelectedShelfIds((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(shelf.id)) next.delete(shelf.id);
-                            else next.add(shelf.id);
-                            return next;
-                          });
+                          addFromSearch(addToShelfResult, shelf.id);
+                          setShowAddToShelfModal(false);
+                          setAddToShelfResult(null);
+                          setAddToShelfSelectedShelfIds(new Set());
                         }}
                       >
                         {shelf.name}
