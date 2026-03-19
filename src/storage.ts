@@ -616,10 +616,6 @@ export function addBookSnapshotsToMyLibrary(
   if (!me || !snapshots.length) return { added: 0, skipped: 0 };
   const currentBooks = loadBooks();
   const norm = (t: string) => (t ?? "").trim().toLowerCase();
-  const exists = (title: string, authors: string) =>
-    currentBooks.some((b) => norm(b.title) === norm(title) && norm(b.authors) === norm(authors));
-  const toAdd = snapshots.filter((b) => !exists(b.title, b.authors));
-  const skipped = snapshots.length - toAdd.length;
   const systemStatus: Record<string, ReadStatus> = {
     "wil-ik-lezen": "wil-ik-lezen",
     "aan-het-lezen": "aan-het-lezen",
@@ -629,21 +625,61 @@ export function addBookSnapshotsToMyLibrary(
     options.status ??
     (options.shelfId && systemStatus[options.shelfId]) ??
     "wil-ik-lezen";
-  const shelfIds = options.shelfId && !systemStatus[options.shelfId] ? [options.shelfId] : undefined;
-  let idx = 0;
-  const newBooks: Book[] = toAdd.map((b) => ({
-    id: `book-${Date.now()}-${idx++}-${Math.random().toString(36).slice(2, 9)}`,
-    title: b.title,
-    authors: b.authors,
-    coverUrl: b.coverUrl,
-    status,
-    order: status === "wil-ik-lezen" ? undefined : undefined,
-    shelfIds
-  }));
-  if (newBooks.length > 0) {
-    saveBooks([...currentBooks, ...newBooks]);
+  const customShelfId = options.shelfId && !systemStatus[options.shelfId] ? options.shelfId : null;
+
+  const nextBooks = [...currentBooks];
+  let createdCount = 0;
+  let updatedExistingCount = 0;
+  let skipped = 0;
+
+  snapshots.forEach((snapshot, idx) => {
+    const existingIndex = nextBooks.findIndex(
+      (b) => norm(b.title) === norm(snapshot.title) && norm(b.authors) === norm(snapshot.authors)
+    );
+
+    if (existingIndex >= 0) {
+      const existing = nextBooks[existingIndex];
+      let changed = false;
+      let updated: Book = existing;
+
+      if (customShelfId) {
+        const existingShelfIds = existing.shelfIds ?? [];
+        if (!existingShelfIds.includes(customShelfId)) {
+          updated = { ...updated, shelfIds: [...existingShelfIds, customShelfId] };
+          changed = true;
+        }
+      } else if (existing.status !== status) {
+        updated = { ...updated, status };
+        changed = true;
+      }
+
+      if (changed) {
+        nextBooks[existingIndex] = updated;
+        updatedExistingCount += 1;
+      } else {
+        skipped += 1;
+      }
+      return;
+    }
+
+    const shelfIds = customShelfId ? [customShelfId] : undefined;
+    nextBooks.push({
+      id: `book-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 9)}`,
+      title: snapshot.title,
+      authors: snapshot.authors,
+      coverUrl: snapshot.coverUrl,
+      status,
+      order: undefined,
+      shelfIds
+    });
+    createdCount += 1;
+  });
+
+  if (createdCount > 0 || updatedExistingCount > 0) {
+    saveBooks(nextBooks);
   }
-  return { added: newBooks.length, skipped };
+
+  return { added: createdCount + updatedExistingCount, skipped };
 }
 
 /** Voeg alleen de geselecteerde boeken uit een gedeeld item toe aan TBR; haal ze uit het item. */
