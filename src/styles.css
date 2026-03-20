@@ -1027,6 +1027,9 @@ select {
   max-width: 100%;
   padding: 0.35rem 0.5rem;
   font-size: 0.85rem;
+  /* De globale select/background is deels transparant (0.8),
+     waardoor genre-tekst uit de kaart erdoorheen kan “leaken”. */
+  background: rgba(15, 23, 42, 0.98);
 }
 
 .book-meta > div {
