@@ -943,8 +943,12 @@ select {
   box-sizing: border-box;
   max-width: 100%;
   overflow: hidden;
+  /* Hard clamp zodat de badge nooit in hoogte “doorlekt” richting status/meta. */
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
   line-height: 1.1;
   text-align: center;
 }
