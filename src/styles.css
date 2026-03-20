@@ -3669,6 +3669,7 @@ select {
   font-weight: 600;
   color: #38bdf8;
   margin-bottom: 0.15rem;
+  line-height: 1.1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4231,6 +4232,8 @@ select {
 
 .dashboard-shelf-book-genre {
   display: block;
+  width: 100%;
+  box-sizing: border-box;
   font-size: 0.6rem;
   font-weight: 600;
   color: #38bdf8;
@@ -4239,6 +4242,7 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: center;
+  line-height: 1.1;
 }
 
 .shelf-book-title {
@@ -5183,7 +5187,11 @@ select {
   padding: 0.1rem 0.25rem;
   border: 1px solid rgba(56, 189, 248, 0.35);
   border-radius: 999px;
+  width: 100%;
   max-width: 100%;
+  box-sizing: border-box;
+  display: block;
+  line-height: 1.1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
