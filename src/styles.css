@@ -5066,7 +5066,7 @@ select {
 .bookcase-books {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem 1.25rem;
+  gap: 1.4rem 1.75rem;
   align-items: flex-end;
   padding-bottom: 0.5rem;
 }
@@ -5118,7 +5118,7 @@ select {
   -ms-user-select: none;
 }
 .bookcase-book:hover {
-  transform: translateY(-4px);
+  transform: translateY(-2px);
 }
 .bookcase-book:focus-visible {
   outline: 2px solid #60a5fa;
