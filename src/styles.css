@@ -929,7 +929,7 @@ select {
 }
 
 .book-genre-badge {
-  display: inline-block;
+  display: block;
   background: rgba(56, 189, 248, 0.12);
   color: #7dd3fc;
   font-size: 0.68rem;
@@ -938,10 +938,14 @@ select {
   border-radius: 0.3rem;
   margin-bottom: 0.35rem;
   border: 1px solid rgba(56, 189, 248, 0.35);
+  width: 100%;
+  box-sizing: border-box;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.1;
+  text-align: center;
 }
 
 .book-authors {
@@ -5190,8 +5194,11 @@ select {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1.1;
+  align-self: stretch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
