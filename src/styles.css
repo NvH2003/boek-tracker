@@ -877,8 +877,9 @@ select {
 
 .book-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  column-gap: 0.85rem;
+  row-gap: 1.75rem;
 }
 
 .book-card {
