@@ -307,7 +307,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       left
     )},top=${Math.round(clampedTop)}`;
 
-    const w = window.open(url, "goodreads_genre", features);
+    const w = window.open(url, "goodreads_genre_shared", features);
     w?.focus?.();
     return w;
   }
@@ -654,11 +654,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                 e.preventDefault();
                 const opened = openInAdjacentWindow(goodreadsGenreUrl);
                 if (!opened) {
-                  window.open(
-                    goodreadsGenreUrl,
-                    "_blank",
-                    "noopener,noreferrer"
-                  );
+                  window.open(goodreadsGenreUrl, "goodreads_genre_shared");
                 }
               }}
             >

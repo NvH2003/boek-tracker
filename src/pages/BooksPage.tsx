@@ -1917,7 +1917,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     );
     const features = `popup=true,resizable=yes,width=${Math.round(width)},height=${Math.round(height)},left=${Math.round(left)},top=${Math.round(clampedTop)}`;
 
-    const w = window.open(url, "goodreads_genre_manual", features);
+    const w = window.open(url, "goodreads_genre_shared", features);
     w?.focus?.();
     return w;
   }
@@ -3174,7 +3174,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                       e.preventDefault();
                       const opened = openInAdjacentWindow(url);
                       if (!opened) {
-                        window.open(url, "_blank", "noopener,noreferrer");
+                        window.open(url, "goodreads_genre_shared");
                       }
                     }}
                   >
