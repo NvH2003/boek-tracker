@@ -1885,17 +1885,41 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   }
 
   function openInAdjacentWindow(url: string) {
-    // Probeer naast/naast de huidige tab te openen (browser kan dit wel/niet toestaan).
     const width = Math.min(1100, Math.max(700, window.outerWidth - 80));
     const height = Math.min(900, Math.max(650, window.outerHeight - 120));
-    const leftGap = 400; // extra ruimte zodat het venster verder naar links landt
-    const leftBase =
-      (window.screenX ?? window.screenLeft ?? 0) + window.outerWidth - width - leftGap;
-    const left = Math.max(0, leftBase);
-    const topBase = (window.screenY ?? window.screenTop ?? 0) + 30;
-    const top = Math.max(0, topBase);
-    const features = `popup=true,width=${Math.round(width)},height=${Math.round(height)},left=${Math.round(left)},top=${Math.round(top)}`;
-    return window.open(url, "goodreads_genre_manual", features);
+    const gap = 40; // ruimte tussen boektracker en Goodreads
+
+    // Schat beschikbaar ruimte links/rechts van dit venster op (werkt meestal goed op één monitor).
+    const appLeft = window.screenX ?? window.screenLeft ?? 0;
+    const appTop = window.screenY ?? window.screenTop ?? 0;
+    const screenLeft = window.screenLeft ?? window.screenX ?? 0;
+    const screenTop = window.screenTop ?? window.screenY ?? 0;
+    const screenWidth = window.screen.width ?? 1920;
+    const screenHeight = window.screen.height ?? 1080;
+    const appRight = appLeft + window.outerWidth;
+    const screenRight = screenLeft + screenWidth;
+
+    const leftSpace = appLeft - screenLeft;
+    const rightSpace = screenRight - appRight;
+
+    const fitsLeft = leftSpace >= width + gap;
+    const fitsRight = rightSpace >= width + gap;
+
+    const left = fitsLeft
+      ? appLeft - width - gap
+      : fitsRight
+        ? appRight + gap
+        : Math.max(screenLeft, Math.min(appLeft - width - gap, screenRight - width));
+
+    const clampedTop = Math.max(
+      screenTop,
+      Math.min(appTop + 30, screenTop + screenHeight - height)
+    );
+    const features = `popup=true,resizable=yes,width=${Math.round(width)},height=${Math.round(height)},left=${Math.round(left)},top=${Math.round(clampedTop)}`;
+
+    const w = window.open(url, "goodreads_genre_manual", features);
+    w?.focus?.();
+    return w;
   }
 
   function closeManualBookModal() {
