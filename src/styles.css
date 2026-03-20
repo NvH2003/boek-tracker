@@ -5066,9 +5066,24 @@ select {
 .bookcase-books {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.4rem 1.75rem;
+  /* Doel: max 5 boeken per rij (ook op brede schermen) */
+  --bookcase-col-gap: 2.25rem;
+  --bookcase-row-gap: 1.55rem;
+  gap: var(--bookcase-row-gap) var(--bookcase-col-gap);
   align-items: flex-end;
+  justify-content: center;
   padding-bottom: 0.5rem;
+  max-width: calc(5 * 100px + 4 * var(--bookcase-col-gap));
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (max-width: 680px) {
+  .bookcase-books {
+    max-width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+  }
 }
 
 /** Witruimte tussen series wanneer sorteerregel "Serie" actief is (groepering: geen) – zichtbaar als een enter/alinea. */
