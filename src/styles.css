@@ -896,7 +896,7 @@ select {
 .book-card-header {
   display: flex;
   gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 1.1rem;
 }
 
 .book-main {
@@ -1013,7 +1013,8 @@ select {
   flex-direction: column;
   gap: 0.4rem;
   font-size: 0.8rem;
-  margin-top: auto;
+  /* Zorg dat meta niet “naar beneden trekt” en header kan comprimeren. */
+  margin-top: 0;
 }
 
 .book-meta label {
