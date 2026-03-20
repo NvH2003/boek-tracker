@@ -2604,7 +2604,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                           return (
                             <div
                               className="book-genre-badge genre-preview-toggle"
-                              title={fullGenres}
                               onMouseEnter={() => {
                                 if (extraCount > 0) setExpandedGenreBookId(book.id);
                               }}
@@ -2623,7 +2622,13 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                                 <span className="genre-preview-more"> +{extraCount}</span>
                               )}
                               {isOpen && extraCount > 0 && (
-                                <div className="genre-preview-popover">{fullGenres}</div>
+                                <div className="genre-preview-popover">
+                                  {genres.map((g) => (
+                                    <div key={g} className="genre-preview-line">
+                                      {g}
+                                    </div>
+                                  ))}
+                                </div>
                               )}
                             </div>
                           );

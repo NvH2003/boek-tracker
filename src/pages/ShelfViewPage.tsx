@@ -621,7 +621,6 @@ export function ShelfViewPage() {
             return (
               <div
                 className="bookcase-book-genre genre-preview-toggle"
-                title={fullGenres}
                 onMouseEnter={() => {
                   if (extraCount > 0) setExpandedGenreBookId(book.id);
                 }}
@@ -638,7 +637,13 @@ export function ShelfViewPage() {
                 <span className="genre-preview-text">{previewGenres}</span>
                 {extraCount > 0 && <span className="genre-preview-more"> +{extraCount}</span>}
                 {isOpen && extraCount > 0 && (
-                  <div className="genre-preview-popover">{fullGenres}</div>
+                  <div className="genre-preview-popover">
+                    {genres.map((g) => (
+                      <div key={g} className="genre-preview-line">
+                        {g}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             );

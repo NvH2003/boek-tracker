@@ -5251,13 +5251,20 @@ select {
   border: 1px solid rgba(148, 163, 184, 0.45);
   border-radius: 0.75rem;
   padding: 0.35rem 0.55rem;
-  max-width: 240px;
+  /* Zo breed als de inhoud (langste genre-woord), maar nooit groter dan scherm. */
+  width: max-content;
+  max-width: calc(100vw - 1rem);
   color: #e5e7eb;
   font-size: 0.7rem;
   line-height: 1.25;
   white-space: normal;
-  word-break: break-word;
+  word-break: normal;
   pointer-events: none; /* weergave-only; kliks mogen door de kaart heen */
+}
+
+.genre-preview-line {
+  display: block;
+  white-space: nowrap;
 }
 
 /* Serie in boekkaart: zelfde paarse label als in leeslijst (book-series-badge) */
