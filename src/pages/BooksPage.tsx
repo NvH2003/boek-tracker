@@ -5,6 +5,7 @@ import { loadBooks, loadChallenge, loadShelves, saveShelves, saveBooks, subscrib
 import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
 import { formatGenresPreserveOrder, parseGenres, parseGenresPreserveOrder } from "../genreUtils";
+import { supabase, isSupabaseConfigured } from "../supabase";
 
 interface SearchResult {
   id: string;
@@ -92,6 +93,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   const [isEnrichingTBR, setIsEnrichingTBR] = useState(false);
   const [searchError, setSearchError] = useState<string>("");
   const [expandedGenreBookId, setExpandedGenreBookId] = useState<string | null>(null);
+  const [isFetchingGoodreadsGenresNl, setIsFetchingGoodreadsGenresNl] = useState(false);
 
   useEffect(() => {
     if (!showAuthorSuggestions) return;
@@ -3203,23 +3205,53 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
               <label className="form-field">
                 <span>Genre (optioneel)</span>
                 {getGoodreadsSearchUrl(manualTitle, manualAuthors) && (
-                  <a
-                    href={getGoodreadsSearchUrl(manualTitle, manualAuthors) ?? undefined}
-                    rel="noreferrer"
+                  <button
+                    type="button"
                     className="link-button"
-                    aria-label="Zoek dit boek op Goodreads om genres te vinden"
-                    onClick={(e) => {
+                    disabled={isFetchingGoodreadsGenresNl}
+                    aria-label="Haal genres op via Goodreads (in het Nederlands)"
+                    onClick={async (e) => {
+                      e.preventDefault();
                       const url = getGoodreadsSearchUrl(manualTitle, manualAuthors);
                       if (!url) return;
-                      e.preventDefault();
-                      const opened = openInAdjacentWindow(url);
-                      if (!opened) {
-                        window.open(url, "goodreads_genre_shared");
+
+                      // Fallback: open Goodreads als Supabase/edge function niet beschikbaar is.
+                      if (!isSupabaseConfigured() || !supabase) {
+                        const opened = openInAdjacentWindow(url);
+                        if (!opened) window.open(url, "goodreads_genre_shared");
+                        return;
+                      }
+
+                      setIsFetchingGoodreadsGenresNl(true);
+                      try {
+                        const resp = await (supabase as any).functions.invoke("goodreads-genres-nl", {
+                          method: "POST",
+                          body: { title: manualTitle, authors: manualAuthors },
+                        });
+
+                        const genres: string[] | undefined = resp?.data?.genres ?? resp?.genres;
+                        if (!Array.isArray(genres) || genres.length === 0) {
+                          throw new Error("Geen genres teruggekregen");
+                        }
+
+                        const joined = genres.filter(Boolean).join(", ");
+                        setManualGenre(joined);
+                        setManualGenreQuickAdd("");
+                        setActiveGenreSuggestionIndex(-1);
+                        setToast("Genres (NL) opgehaald.");
+                        window.setTimeout(() => setToast(""), 2500);
+                      } catch {
+                        setToast("Ophalen via NL lukt niet. Open Goodreads (fallback).");
+                        window.setTimeout(() => setToast(""), 3500);
+                        const opened = openInAdjacentWindow(url);
+                        if (!opened) window.open(url, "goodreads_genre_shared");
+                      } finally {
+                        setIsFetchingGoodreadsGenresNl(false);
                       }
                     }}
                   >
-                    Goodreads (genres)
-                  </a>
+                    {isFetchingGoodreadsGenresNl ? "Genres ophalen..." : "Goodreads (genres)"}
+                  </button>
                 )}
                 <div className="genre-pill-container">
                   {genrePillsForSelect.length === 0 ? (

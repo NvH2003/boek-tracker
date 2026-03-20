@@ -5,6 +5,7 @@ import { Book, ReadStatus, Shelf } from "../types";
 import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
 import { parseGenres, parseGenresPreserveOrder } from "../genreUtils";
+import { isSupabaseConfigured, supabase } from "../supabase";
 
 const STATUS_LABELS: Record<ReadStatus, string> = {
   "wil-ik-lezen": "Wil ik lezen",
@@ -71,6 +72,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   const [coverUrl, setCoverUrl] = useState<string>(book?.coverUrl ?? "");
   const [description, setDescription] = useState<string>(book?.description ?? "");
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [isFetchingGoodreadsGenresNl, setIsFetchingGoodreadsGenresNl] = useState(false);
 
   // Haal alle unieke serie namen op
   const existingSeries = useMemo(() => {
@@ -645,21 +647,48 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         <div className="form-field">
           <span>Genre (optioneel)</span>
           {goodreadsGenreUrl && (
-            <a
-              href={goodreadsGenreUrl}
-              rel="noreferrer"
+            <button
+              type="button"
               className="link-button"
-              aria-label="Zoek dit boek op Goodreads om genres te vinden"
-              onClick={(e) => {
+              disabled={isFetchingGoodreadsGenresNl}
+              aria-label="Haal genres op via Goodreads (in het Nederlands)"
+              onClick={async (e) => {
                 e.preventDefault();
-                const opened = openInAdjacentWindow(goodreadsGenreUrl);
-                if (!opened) {
-                  window.open(goodreadsGenreUrl, "goodreads_genre_shared");
+                e.stopPropagation();
+
+                if (!isSupabaseConfigured() || !supabase) {
+                  const opened = openInAdjacentWindow(goodreadsGenreUrl);
+                  if (!opened) window.open(goodreadsGenreUrl, "goodreads_genre_shared");
+                  return;
+                }
+
+                setIsFetchingGoodreadsGenresNl(true);
+                try {
+                  const resp = await (supabase as any).functions.invoke("goodreads-genres-nl", {
+                    method: "POST",
+                    body: { title, authors },
+                  });
+
+                  const genres: string[] | undefined = resp?.data?.genres ?? resp?.genres;
+                  if (!Array.isArray(genres) || genres.length === 0) {
+                    throw new Error("Geen genres teruggekregen");
+                  }
+
+                  const joined = genres.filter(Boolean).join(", ");
+                  setGenre(joined);
+                  setGenreQuickAdd("");
+                  setActiveGenreSuggestionIndex(-1);
+                  updateBook({ genre: joined || undefined });
+                } catch {
+                  const opened = openInAdjacentWindow(goodreadsGenreUrl);
+                  if (!opened) window.open(goodreadsGenreUrl, "goodreads_genre_shared");
+                } finally {
+                  setIsFetchingGoodreadsGenresNl(false);
                 }
               }}
             >
-              Goodreads
-            </a>
+              {isFetchingGoodreadsGenresNl ? "Genres ophalen..." : "Goodreads"}
+            </button>
           )}
           <div className="genre-pill-container">
             {genrePillsForSelect.length === 0 ? (
