@@ -91,6 +91,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   const [activeAuthorSuggestionIndex, setActiveAuthorSuggestionIndex] = useState<number>(-1);
   const [isEnrichingTBR, setIsEnrichingTBR] = useState(false);
   const [searchError, setSearchError] = useState<string>("");
+  const [expandedGenreBookId, setExpandedGenreBookId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!showAuthorSuggestions) return;
@@ -2592,7 +2593,41 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                       <h3>{book.title}</h3>
                       <p className="book-authors">{book.authors}</p>
                       {book.genre && (
-                        <div className="book-genre-badge">{formatGenresPreserveOrder(book.genre)}</div>
+                        (() => {
+                          const genres = parseGenresPreserveOrder(book.genre);
+                          const fullGenres = genres.join(", ");
+                          const extraCount = Math.max(0, genres.length - 2);
+                          const previewGenres =
+                            genres.length <= 2 ? fullGenres : genres.slice(0, 2).join(", ");
+                          const isOpen = extraCount > 0 && expandedGenreBookId === book.id;
+
+                          return (
+                            <div
+                              className="book-genre-badge genre-preview-toggle"
+                              title={fullGenres}
+                              onMouseEnter={() => {
+                                if (extraCount > 0) setExpandedGenreBookId(book.id);
+                              }}
+                              onMouseLeave={() => {
+                                if (isOpen) setExpandedGenreBookId(null);
+                              }}
+                              onClick={(e) => {
+                                if (extraCount <= 0) return;
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setExpandedGenreBookId((prev) => (prev === book.id ? null : book.id));
+                              }}
+                            >
+                              <span className="genre-preview-text">{previewGenres}</span>
+                              {extraCount > 0 && (
+                                <span className="genre-preview-more"> +{extraCount}</span>
+                              )}
+                              {isOpen && extraCount > 0 && (
+                                <div className="genre-preview-popover">{fullGenres}</div>
+                              )}
+                            </div>
+                          );
+                        })()
                       )}
                       {getBookPlankNames(book).length > 0 && (
                         <div className="book-planks">

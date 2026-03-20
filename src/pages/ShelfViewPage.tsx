@@ -187,6 +187,7 @@ export function ShelfViewPage() {
   const suppressNextClickRef = useRef(false);
   const suppressNextClickResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressBookIdRef = useRef<string | null>(null);
+  const [expandedGenreBookId, setExpandedGenreBookId] = useState<string | null>(null);
   const [selectionBarPosition, setSelectionBarPosition] = useState({ bottom: 96, leftPercent: 50 });
   const selectionBarDragRef = useRef<{ startY: number; startBottom: number; startX: number; startLeft: number } | null>(null);
 
@@ -609,9 +610,39 @@ export function ShelfViewPage() {
           {book.authors && effectiveGroupMode !== "author" && (
             <span className="bookcase-book-author">{book.authors}</span>
           )}
-          {book.genre && effectiveGroupMode !== "genre" && (
-            <div className="bookcase-book-genre">{formatGenresPreserveOrder(book.genre)}</div>
-          )}
+          {book.genre && effectiveGroupMode !== "genre" && (() => {
+            const genres = parseGenresPreserveOrder(book.genre);
+            const fullGenres = genres.join(", ");
+            const extraCount = Math.max(0, genres.length - 2);
+            const previewGenres =
+              genres.length <= 2 ? fullGenres : genres.slice(0, 2).join(", ");
+            const isOpen = extraCount > 0 && expandedGenreBookId === book.id;
+
+            return (
+              <div
+                className="bookcase-book-genre genre-preview-toggle"
+                title={fullGenres}
+                onMouseEnter={() => {
+                  if (extraCount > 0) setExpandedGenreBookId(book.id);
+                }}
+                onMouseLeave={() => {
+                  if (isOpen) setExpandedGenreBookId(null);
+                }}
+                onClick={(e) => {
+                  if (extraCount <= 0) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setExpandedGenreBookId((prev) => (prev === book.id ? null : book.id));
+                }}
+              >
+                <span className="genre-preview-text">{previewGenres}</span>
+                {extraCount > 0 && <span className="genre-preview-more"> +{extraCount}</span>}
+                {isOpen && extraCount > 0 && (
+                  <div className="genre-preview-popover">{fullGenres}</div>
+                )}
+              </div>
+            );
+          })()}
           {(book.seriesName?.trim() || book.seriesNumber != null) && (
             <div className="book-series-badge">
               {effectiveGroupMode === "series"

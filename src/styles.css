@@ -942,13 +942,9 @@ select {
   width: 100%;
   box-sizing: border-box;
   max-width: 100%;
-  overflow: hidden;
-  /* Hard clamp zodat de badge nooit in hoogte “doorlekt” richting status/meta. */
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  text-overflow: ellipsis;
-  white-space: normal;
+  overflow: visible;
+  position: relative;
+  text-align: center;
   line-height: 1.1;
   text-align: center;
 }
@@ -3683,9 +3679,10 @@ select {
   color: #38bdf8;
   margin-bottom: 0.15rem;
   line-height: 1.1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  position: relative;
+  text-align: left;
+  white-space: normal;
 }
 
 .mobile-reading-author {
@@ -5218,14 +5215,49 @@ select {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 1.1;
   align-self: stretch;
+  overflow: visible;
+}
+
+/* Genre preview: max 2 genres tonen, bij meer een +N en een popover met de volledige lijst. */
+.genre-preview-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.genre-preview-more {
+  display: inline-block;
+  flex: 0 0 auto;
+  margin-left: 0.25rem;
+  font-weight: 800;
+}
+
+.genre-preview-popover {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 0.25rem);
+  transform: translateX(-50%);
+  z-index: 80;
+  background: rgba(15, 23, 42, 0.98);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 0.75rem;
+  padding: 0.35rem 0.55rem;
+  max-width: 240px;
+  color: #e5e7eb;
+  font-size: 0.7rem;
+  line-height: 1.25;
+  white-space: normal;
+  word-break: break-word;
+  pointer-events: none; /* weergave-only; kliks mogen door de kaart heen */
 }
 
 /* Serie in boekkaart: zelfde paarse label als in leeslijst (book-series-badge) */

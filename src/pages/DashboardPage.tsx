@@ -4,7 +4,7 @@ import { loadBooks, loadShelves, saveShelves, loadChallenge, saveChallenge, save
 import { Book, Shelf, ReadStatus, ReadingChallenge } from "../types";
 import { useBasePath, withBase } from "../routing";
 import { BookDetailPage } from "./BookDetailPage";
-import { formatGenresPreserveOrder } from "../genreUtils";
+import { formatGenresPreserveOrder, parseGenresPreserveOrder } from "../genreUtils";
 
 function formatDate(date: Date): string {
   const year = date.getFullYear();
@@ -172,6 +172,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
   const [showModalStatusMenu, setShowModalStatusMenu] = useState(false);
   const [selectionBarPosition, setSelectionBarPosition] = useState({ bottom: 96, leftPercent: 50 });
   const [toast, setToast] = useState("");
+  const [expandedGenreBookId, setExpandedGenreBookId] = useState<string | null>(null);
   const selectionBarDragRef = useRef<{ startY: number; startBottom: number; startX: number; startLeft: number } | null>(null);
 
   const STATUS_LABELS: Record<ReadStatus, string> = {
@@ -1099,7 +1100,48 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                             )}
                           </div>
                           {book.genre && (
-                            <div className="mobile-reading-genre">{formatGenresPreserveOrder(book.genre)}</div>
+                            (() => {
+                              const genres = parseGenresPreserveOrder(book.genre);
+                              const fullGenres = genres.join(", ");
+                              const extraCount = Math.max(0, genres.length - 2);
+                              const previewGenres =
+                                genres.length <= 2 ? fullGenres : genres.slice(0, 2).join(", ");
+                              const isOpen =
+                                extraCount > 0 && expandedGenreBookId === book.id;
+
+                              return (
+                                <div
+                                  className="mobile-reading-genre genre-preview-toggle"
+                                  title={fullGenres}
+                                  onMouseEnter={() => {
+                                    if (extraCount > 0) setExpandedGenreBookId(book.id);
+                                  }}
+                                  onMouseLeave={() => {
+                                    if (isOpen) setExpandedGenreBookId(null);
+                                  }}
+                                  onClick={(e) => {
+                                    if (extraCount <= 0) return;
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setExpandedGenreBookId((prev) =>
+                                      prev === book.id ? null : book.id
+                                    );
+                                  }}
+                                >
+                                  <span className="genre-preview-text">{previewGenres}</span>
+                                  {extraCount > 0 && (
+                                    <span className="genre-preview-more">
+                                      +{extraCount}
+                                    </span>
+                                  )}
+                                  {isOpen && extraCount > 0 && (
+                                    <div className="genre-preview-popover">
+                                      {fullGenres}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()
                           )}
                           {getBookPlankNames(book).length > 0 && (
                             <div className="mobile-reading-planks">
@@ -1369,7 +1411,48 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                             )}
                           </div>
                           {book.genre && (
-                            <div className="mobile-reading-genre">{formatGenresPreserveOrder(book.genre)}</div>
+                            (() => {
+                              const genres = parseGenresPreserveOrder(book.genre);
+                              const fullGenres = genres.join(", ");
+                              const extraCount = Math.max(0, genres.length - 2);
+                              const previewGenres =
+                                genres.length <= 2 ? fullGenres : genres.slice(0, 2).join(", ");
+                              const isOpen =
+                                extraCount > 0 && expandedGenreBookId === book.id;
+
+                              return (
+                                <div
+                                  className="mobile-reading-genre genre-preview-toggle"
+                                  title={fullGenres}
+                                  onMouseEnter={() => {
+                                    if (extraCount > 0) setExpandedGenreBookId(book.id);
+                                  }}
+                                  onMouseLeave={() => {
+                                    if (isOpen) setExpandedGenreBookId(null);
+                                  }}
+                                  onClick={(e) => {
+                                    if (extraCount <= 0) return;
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setExpandedGenreBookId((prev) =>
+                                      prev === book.id ? null : book.id
+                                    );
+                                  }}
+                                >
+                                  <span className="genre-preview-text">{previewGenres}</span>
+                                  {extraCount > 0 && (
+                                    <span className="genre-preview-more">
+                                      +{extraCount}
+                                    </span>
+                                  )}
+                                  {isOpen && extraCount > 0 && (
+                                    <div className="genre-preview-popover">
+                                      {fullGenres}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()
                           )}
                           {getBookPlankNames(book).length > 0 && (
                             <div className="mobile-reading-planks">
@@ -1639,9 +1722,50 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                             </span>
                           )}
                         </div>
-                        {book.genre && (
-                          <div className="mobile-reading-genre">{formatGenresPreserveOrder(book.genre)}</div>
-                        )}
+                          {book.genre && (
+                            (() => {
+                              const genres = parseGenresPreserveOrder(book.genre);
+                              const fullGenres = genres.join(", ");
+                              const extraCount = Math.max(0, genres.length - 2);
+                              const previewGenres =
+                                genres.length <= 2 ? fullGenres : genres.slice(0, 2).join(", ");
+                              const isOpen =
+                                extraCount > 0 && expandedGenreBookId === book.id;
+
+                              return (
+                                <div
+                                  className="mobile-reading-genre genre-preview-toggle"
+                                  title={fullGenres}
+                                  onMouseEnter={() => {
+                                    if (extraCount > 0) setExpandedGenreBookId(book.id);
+                                  }}
+                                  onMouseLeave={() => {
+                                    if (isOpen) setExpandedGenreBookId(null);
+                                  }}
+                                  onClick={(e) => {
+                                    if (extraCount <= 0) return;
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setExpandedGenreBookId((prev) =>
+                                      prev === book.id ? null : book.id
+                                    );
+                                  }}
+                                >
+                                  <span className="genre-preview-text">{previewGenres}</span>
+                                  {extraCount > 0 && (
+                                    <span className="genre-preview-more">
+                                      +{extraCount}
+                                    </span>
+                                  )}
+                                  {isOpen && extraCount > 0 && (
+                                    <div className="genre-preview-popover">
+                                      {fullGenres}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()
+                          )}
                         {getBookPlankNames(book).length > 0 && (
                           <div className="mobile-reading-planks">
                             <span className="mobile-reading-planks-label">Boekenkasten:</span>
