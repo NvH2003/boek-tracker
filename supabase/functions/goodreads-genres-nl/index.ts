@@ -1,4 +1,5 @@
-// Goodreads → genres (zoals op de site). Geen vertaling; geen LIBRETRANSLATE_* secrets nodig.
+// Genres/categorieën via Google Books API (volumeInfo.categories). Geen Goodreads-scraping.
+// Secret in Supabase: GOOGLE_BOOKS_API_KEY (zelfde key als VITE_GOOGLE_BOOKS_API_KEY in je app).
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const CORS_HEADERS = {
@@ -8,46 +9,26 @@ const CORS_HEADERS = {
   "Content-Type": "application/json",
 };
 
-function decodeHtmlEntities(input: string): string {
-  return input
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
-}
+const GOOGLE_BOOKS_VOLUMES = "https://www.googleapis.com/books/v1/volumes";
 
-function extractFirstGoodreadsBookPathFromSearchHtml(searchHtml: string): string | null {
-  // Voorbeeld link: /book/show/5907.The_Hobbit
-  const m = searchHtml.match(/href=["'](\/book\/show\/\d+[^"'']*)["']/);
-  return m?.[1] ?? null;
-}
-
-function extractGenreTextsFromGoodreadsBookHtml(bookHtml: string): string[] {
-  const genres: string[] = [];
+/** Google geeft soms hiërarchieën als "Fiction / Fantasy / Epic". */
+function flattenCategories(categories: unknown): string[] {
+  if (categories == null) return [];
+  const raw = Array.isArray(categories) ? categories : [String(categories)];
+  const out: string[] = [];
   const seen = new Set<string>();
 
-  // Goodreads gebruikt meestal /genres/... anchors met als tekst de genre-naam.
-  const regex = /href=(["'])\/genres\/[^"']+\1[^>]*>([^<]+)</g;
-  const matches = bookHtml.matchAll(regex);
-
-  for (const match of matches) {
-    const rawText = match[2] ?? "";
-    const decoded = decodeHtmlEntities(rawText).trim();
-    if (!decoded) continue;
-
-    // Soms match je ook label-achtigen; die willen we overslaan.
-    if (decoded.toLowerCase() === "genres") continue;
-
-    if (!seen.has(decoded)) {
-      seen.add(decoded);
-      genres.push(decoded);
+  for (const entry of raw) {
+    if (typeof entry !== "string") continue;
+    const parts = entry.split(/\s*\/\s*/).map((p) => p.trim()).filter(Boolean);
+    for (const p of parts) {
+      const key = p.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(p);
     }
   }
-
-  return genres;
+  return out;
 }
 
 Deno.serve(async (req) => {
@@ -63,6 +44,17 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const apiKey = Deno.env.get("GOOGLE_BOOKS_API_KEY")?.trim();
+    if (!apiKey) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "GOOGLE_BOOKS_API_KEY ontbreekt. Zet deze als secret voor deze Edge Function in Supabase (zelfde key als in Google Cloud Console voor Books API).",
+        }),
+        { status: 503, headers: CORS_HEADERS },
+      );
+    }
+
     const body = (await req.json().catch(() => ({}))) as { title?: string; authors?: string };
     const title = String(body.title ?? "").trim();
     const authors = String(body.authors ?? "").trim();
@@ -71,59 +63,37 @@ Deno.serve(async (req) => {
     }
 
     const q = [title, authors].filter(Boolean).join(" ");
-    const searchUrl = `https://www.goodreads.com/search?q=${encodeURIComponent(q)}`;
+    const url = new URL(GOOGLE_BOOKS_VOLUMES);
+    url.searchParams.set("q", q);
+    url.searchParams.set("maxResults", "5");
+    url.searchParams.set("key", apiKey);
 
-    const searchRes = await fetch(searchUrl, {
-      headers: {
-        // Soms toont Goodreads een andere HTML zonder browser-achtige headers.
-        "User-Agent": "Mozilla/5.0 (compatible; BoekTracker/1.0)",
-      },
-    });
+    const res = await fetch(url.toString());
+    const data = await res.json().catch(() => ({} as { items?: { volumeInfo?: { categories?: unknown } }[] }));
 
-    if (!searchRes.ok) {
-      return new Response(JSON.stringify({ error: `Goodreads search failed: ${searchRes.status}` }), {
-        status: 502,
-        headers: CORS_HEADERS,
-      });
+    if (!res.ok) {
+      const msg =
+        typeof (data as { error?: { message?: string } })?.error?.message === "string"
+          ? (data as { error: { message: string } }).error.message
+          : `Google Books API: ${res.status}`;
+      return new Response(JSON.stringify({ error: msg }), { status: 502, headers: CORS_HEADERS });
     }
 
-    const searchHtml = await searchRes.text();
-    const bookPath = extractFirstGoodreadsBookPathFromSearchHtml(searchHtml);
-    if (!bookPath) {
-      return new Response(JSON.stringify({ error: "Kon Goodreads boekpagina niet vinden" }), {
-        status: 404,
-        headers: CORS_HEADERS,
-      });
+    const items = Array.isArray(data.items) ? data.items : [];
+    for (const item of items) {
+      const cats = item?.volumeInfo?.categories;
+      const genres = flattenCategories(cats);
+      if (genres.length > 0) {
+        return new Response(JSON.stringify({ genres }), { status: 200, headers: CORS_HEADERS });
+      }
     }
 
-    const bookUrl = bookPath.startsWith("http") ? bookPath : `https://www.goodreads.com${bookPath}`;
-    const bookRes = await fetch(bookUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; BoekTracker/1.0)",
-      },
-    });
-
-    if (!bookRes.ok) {
-      return new Response(JSON.stringify({ error: `Goodreads book failed: ${bookRes.status}` }), {
-        status: 502,
-        headers: CORS_HEADERS,
-      });
-    }
-
-    const bookHtml = await bookRes.text();
-    const foundGenres = extractGenreTextsFromGoodreadsBookHtml(bookHtml);
-    if (!foundGenres.length) {
-      return new Response(JSON.stringify({ error: "Geen genres gevonden op Goodreads" }), {
-        status: 404,
-        headers: CORS_HEADERS,
-      });
-    }
-
-    // Geen vertaling: genres zoals op Goodreads (meestal Engels).
-    return new Response(JSON.stringify({ genres: foundGenres }), { status: 200, headers: CORS_HEADERS });
+    return new Response(
+      JSON.stringify({ error: "Geen categorieën gevonden in Google Books voor deze zoekopdracht" }),
+      { status: 404, headers: CORS_HEADERS },
+    );
   } catch (e) {
     const message = e instanceof Error ? e.message : "Onbekende fout";
     return new Response(JSON.stringify({ error: message }), { status: 500, headers: CORS_HEADERS });
   }
 });
-

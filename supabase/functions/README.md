@@ -19,13 +19,15 @@ Als je de functie niet deployed, wordt bij accountverwijdering alleen het profie
 
 # Edge Function: goodreads-genres-nl
 
-Haalt genres op van Goodreads (zoekresultaat → boekpagina) en geeft ze terug zoals op Goodreads. **Geen vertaling** en **geen** LibreTranslate-secrets nodig.
+Haalt **categorieën** op via de **Google Books API** (`volumeInfo.categories`) op basis van titel + auteur. Hiërarchische strings (`Fiction / Fantasy`) worden gesplitst naar losse labels.  
+**Secret (verplicht):** `GOOGLE_BOOKS_API_KEY` — dezelfde API key als voor `VITE_GOOGLE_BOOKS_API_KEY` in je app (Books API ingeschakeld in Google Cloud).
 
 ## Deployen (Dashboard)
 
 1. Supabase Dashboard → **Edge Functions** → **Deploy a new function** → **Via Editor**.
 2. Naam: `goodreads-genres-nl`
 3. Plak de code uit `supabase/functions/goodreads-genres-nl/index.ts` en klik **Deploy**.
+4. Onder **Secrets** voor deze function: `GOOGLE_BOOKS_API_KEY` = jouw Google Books API key.
 
 Na elke codewijziging: opnieuw **Deploy** / **Redeploy** voor deze function.
 

@@ -273,10 +273,18 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     return `https://www.goodreads.com/search?q=${encodeURIComponent(q)}`;
   }
 
+  function getGoogleBooksSearchUrl(t?: string, a?: string): string | null {
+    const title = t?.trim();
+    const authors = a?.trim();
+    if (!title && !authors) return null;
+    const q = [title, authors].filter(Boolean).join(" ");
+    return `https://books.google.nl/books?q=${encodeURIComponent(q)}`;
+  }
+
   function openInAdjacentWindow(url: string) {
     const width = Math.min(1100, Math.max(700, window.outerWidth - 80));
     const height = Math.min(900, Math.max(650, window.outerHeight - 120));
-    const gap = 40; // ruimte tussen boektracker en Goodreads
+    const gap = 40; // ruimte tussen boektracker en het hulpvenster
 
     // Schat beschikbaar ruimte links/rechts van dit venster op (werkt meestal goed op één monitor).
     const appLeft = window.screenX ?? window.screenLeft ?? 0;
@@ -309,7 +317,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       left
     )},top=${Math.round(clampedTop)}`;
 
-    const w = window.open(url, "goodreads_genre_shared", features);
+    const w = window.open(url, "book_lookup_shared", features);
     w?.focus?.();
     return w;
   }
@@ -388,7 +396,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     }
   }
 
-  const goodreadsGenreUrl = getGoodreadsSearchUrl(title, authors);
+  const googleBooksGenreUrl = getGoogleBooksSearchUrl(title, authors);
 
   return (
     <div className={`page ${isModal ? "book-detail-modal-content" : ""}`}>
@@ -646,19 +654,19 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         </div>
         <div className="form-field">
           <span>Genre (optioneel)</span>
-          {goodreadsGenreUrl && (
+          {googleBooksGenreUrl && (
             <button
               type="button"
               className="link-button"
               disabled={isFetchingGoodreadsGenres}
-              aria-label="Haal genres automatisch op via Goodreads"
+              aria-label="Haal categorieën op via Google Books"
               onClick={async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
 
                 if (!isSupabaseConfigured() || !supabase) {
-                  const opened = openInAdjacentWindow(goodreadsGenreUrl);
-                  if (!opened) window.open(goodreadsGenreUrl, "goodreads_genre_shared");
+                  const opened = openInAdjacentWindow(googleBooksGenreUrl);
+                  if (!opened) window.open(googleBooksGenreUrl, "book_lookup_shared");
                   return;
                 }
 
@@ -680,14 +688,14 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                   setActiveGenreSuggestionIndex(-1);
                   updateBook({ genre: joined || undefined });
                 } catch {
-                  const opened = openInAdjacentWindow(goodreadsGenreUrl);
-                  if (!opened) window.open(goodreadsGenreUrl, "goodreads_genre_shared");
+                  const opened = openInAdjacentWindow(googleBooksGenreUrl);
+                  if (!opened) window.open(googleBooksGenreUrl, "book_lookup_shared");
                 } finally {
                   setIsFetchingGoodreadsGenres(false);
                 }
               }}
             >
-              {isFetchingGoodreadsGenres ? "Genres ophalen..." : "Goodreads"}
+              {isFetchingGoodreadsGenres ? "Genres ophalen..." : "Genres ophalen"}
             </button>
           )}
           <div className="genre-pill-container">
