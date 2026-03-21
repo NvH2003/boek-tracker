@@ -1,3 +1,4 @@
+// Goodreads → genres (zoals op de site). Geen vertaling; geen LIBRETRANSLATE_* secrets nodig.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const CORS_HEADERS = {
@@ -16,36 +17,6 @@ function decodeHtmlEntities(input: string): string {
     .replace(/&apos;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">");
-}
-
-async function translateToNl(text: string): Promise<string> {
-  const libreBaseUrl = Deno.env.get("LIBRETRANSLATE_URL")?.trim();
-  if (!libreBaseUrl) {
-    throw new Error("LIBRETRANSLATE_URL is niet ingesteld in de Edge Function omgevingsvariabelen.");
-  }
-
-  const translateEndpoint = libreBaseUrl.replace(/\/+$/, "") + "/translate";
-  const apiKey = Deno.env.get("LIBRETRANSLATE_API_KEY")?.trim();
-
-  const res = await fetch(translateEndpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      q: text,
-      source: "en",
-      target: "nl",
-      format: "text",
-      ...(apiKey ? { api_key: apiKey } : {}),
-    }),
-  });
-
-  const json = await res.json().catch(() => ({} as any));
-  const translated =
-    (typeof json?.translatedText === "string" && json.translatedText) ||
-    (typeof json?.translation === "string" && json.translation);
-
-  if (res.ok && translated && translated.trim()) return translated.trim();
-  throw new Error(`Vertaling mislukt: status=${res.status}`);
 }
 
 function extractFirstGoodreadsBookPathFromSearchHtml(searchHtml: string): string | null {
@@ -148,17 +119,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const translatedGenres: string[] = [];
-    for (const g of foundGenres) {
-      try {
-        translatedGenres.push(await translateToNl(g));
-      } catch {
-        // Fallback: geef de originele (meestal Engels) genre terug als vertalen faalt.
-        translatedGenres.push(g);
-      }
-    }
-
-    return new Response(JSON.stringify({ genres: translatedGenres }), { status: 200, headers: CORS_HEADERS });
+    // Geen vertaling: genres zoals op Goodreads (meestal Engels).
+    return new Response(JSON.stringify({ genres: foundGenres }), { status: 200, headers: CORS_HEADERS });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Onbekende fout";
     return new Response(JSON.stringify({ error: message }), { status: 500, headers: CORS_HEADERS });

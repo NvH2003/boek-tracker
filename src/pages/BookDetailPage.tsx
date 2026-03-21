@@ -72,7 +72,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   const [coverUrl, setCoverUrl] = useState<string>(book?.coverUrl ?? "");
   const [description, setDescription] = useState<string>(book?.description ?? "");
   const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [isFetchingGoodreadsGenresNl, setIsFetchingGoodreadsGenresNl] = useState(false);
+  const [isFetchingGoodreadsGenres, setIsFetchingGoodreadsGenres] = useState(false);
 
   // Haal alle unieke serie namen op
   const existingSeries = useMemo(() => {
@@ -650,8 +650,8 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
             <button
               type="button"
               className="link-button"
-              disabled={isFetchingGoodreadsGenresNl}
-              aria-label="Haal genres op via Goodreads (in het Nederlands)"
+              disabled={isFetchingGoodreadsGenres}
+              aria-label="Haal genres automatisch op via Goodreads"
               onClick={async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -662,7 +662,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                   return;
                 }
 
-                setIsFetchingGoodreadsGenresNl(true);
+                setIsFetchingGoodreadsGenres(true);
                 try {
                   const resp = await (supabase as any).functions.invoke("goodreads-genres-nl", {
                     method: "POST",
@@ -683,11 +683,11 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                   const opened = openInAdjacentWindow(goodreadsGenreUrl);
                   if (!opened) window.open(goodreadsGenreUrl, "goodreads_genre_shared");
                 } finally {
-                  setIsFetchingGoodreadsGenresNl(false);
+                  setIsFetchingGoodreadsGenres(false);
                 }
               }}
             >
-              {isFetchingGoodreadsGenresNl ? "Genres ophalen..." : "Goodreads"}
+              {isFetchingGoodreadsGenres ? "Genres ophalen..." : "Goodreads"}
             </button>
           )}
           <div className="genre-pill-container">

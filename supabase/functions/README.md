@@ -14,3 +14,23 @@ De `SUPABASE_SERVICE_ROLE_KEY` staat automatisch in de Edge Function-omgeving; d
 ## Zonder Edge Function
 
 Als je de functie niet deployed, wordt bij accountverwijdering alleen het profiel en de app-data gewist. De auth-user blijft dan bestaan; inloggen lukt niet (geen profiel), maar je ziet wel kort een foutmelding. Deploy van deze functie zorgt ervoor dat inloggen direct mislukt met "Invalid login credentials".
+
+---
+
+# Edge Function: goodreads-genres-nl
+
+Haalt genres op van Goodreads (zoekresultaat → boekpagina) en geeft ze terug zoals op Goodreads. **Geen vertaling** en **geen** LibreTranslate-secrets nodig.
+
+## Deployen (Dashboard)
+
+1. Supabase Dashboard → **Edge Functions** → **Deploy a new function** → **Via Editor**.
+2. Naam: `goodreads-genres-nl`
+3. Plak de code uit `supabase/functions/goodreads-genres-nl/index.ts` en klik **Deploy**.
+
+Na elke codewijziging: opnieuw **Deploy** / **Redeploy** voor deze function.
+
+## Deployen (CLI, optioneel)
+
+```bash
+supabase functions deploy goodreads-genres-nl
+```
