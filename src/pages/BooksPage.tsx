@@ -208,8 +208,37 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "nl-NL"));
   }, [books]);
 
+  function reorderManualGenresForYAAndFiction(labels: string[]): string[] {
+    const blockedLowerSet = new Set(["hedendaags", "contemporary"]);
+    const youngAdultLowerSet = new Set(["young adult", "jong volwassenen"]);
+    const fictionLowerSet = new Set(["fictie", "fiction"]);
+
+    const filtered = labels.filter((g) => {
+      const trimmed = g.trim();
+      if (!trimmed) return false;
+      return !blockedLowerSet.has(trimmed.toLowerCase());
+    });
+
+    const others: string[] = [];
+    const youngAdult: string[] = [];
+    const fiction: string[] = [];
+
+    for (const g of filtered) {
+      const lower = g.trim().toLowerCase();
+      if (youngAdultLowerSet.has(lower)) {
+        youngAdult.push(g);
+      } else if (fictionLowerSet.has(lower)) {
+        fiction.push(g);
+      } else {
+        others.push(g);
+      }
+    }
+
+    return [...others, ...youngAdult, ...fiction];
+  }
+
   const selectedGenres = useMemo(
-    () => parseGenresPreserveOrder(manualGenre),
+    () => reorderManualGenresForYAAndFiction(parseGenresPreserveOrder(manualGenre)),
     [manualGenre]
   );
   const selectedGenreSet = useMemo(
@@ -272,7 +301,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
 
     const current = selectedGenres;
     if (current.length === 0) {
-      setManualGenre(resolved);
+      const finalGenre = reorderManualGenresForYAAndFiction([resolved]).join(", ");
+      setManualGenre(finalGenre);
       setManualGenreQuickAdd("");
       return;
     }
@@ -280,7 +310,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     // Preserve order exactly as the user assigned it:
     // new genre always goes to the end, never re-sorted.
     const ordered = [...current, resolved];
-    setManualGenre(ordered.join(", "));
+    setManualGenre(reorderManualGenresForYAAndFiction(ordered).join(", "));
     setManualGenreQuickAdd("");
   }
 
@@ -310,7 +340,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     const nextSelected = parseGenresPreserveOrder(manualGenre).filter(
       (p) => p.toLowerCase() !== targetLower
     );
-    setManualGenre(nextSelected.join(", "));
+    setManualGenre(reorderManualGenresForYAAndFiction(nextSelected).join(", "));
     setManualGenreQuickAdd("");
   }
 
@@ -1959,7 +1989,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     const seriesName = manualSeriesName.trim() || undefined;
     const seriesNum = manualSeriesNumber.trim() !== "" ? Number(manualSeriesNumber.trim()) || undefined : undefined;
     const coverUrl = manualCoverUrl.trim() || undefined;
-    const finalGenre = parseGenresPreserveOrder(manualGenre).join(", ");
+    const finalGenre = selectedGenres.join(", ");
     const genre = finalGenre || undefined;
     const shelfIds =
       effectiveStatus === "wil-ik-lezen" ||
@@ -3269,7 +3299,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                         return;
                       }
 
-                      const joined = pillLabels.join(", ");
+                      const finalLabels = reorderManualGenresForYAAndFiction(pillLabels);
+                      const joined = finalLabels.join(", ");
                       setManualGenre(joined);
                       setManualGenreQuickAdd("");
                       setActiveGenreSuggestionIndex(-1);
@@ -3298,7 +3329,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                           const ordered = isSelected
                             ? current.filter((x) => x !== g)
                             : [...current, g].filter(Boolean);
-                          setManualGenre(ordered.join(", "));
+                          setManualGenre(reorderManualGenresForYAAndFiction(ordered).join(", "));
                         }}
                       >
                         {g}

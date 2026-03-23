@@ -184,7 +184,39 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "nl-NL"));
   }, [books]);
 
-  const selectedGenres = useMemo(() => parseGenresPreserveOrder(genre), [genre]);
+  function reorderManualGenresForYAAndFiction(labels: string[]): string[] {
+    const blockedLowerSet = new Set(["hedendaags", "contemporary"]);
+    const youngAdultLowerSet = new Set(["young adult", "jong volwassenen"]);
+    const fictionLowerSet = new Set(["fictie", "fiction"]);
+
+    const filtered = labels.filter((g) => {
+      const trimmed = g.trim();
+      if (!trimmed) return false;
+      return !blockedLowerSet.has(trimmed.toLowerCase());
+    });
+
+    const others: string[] = [];
+    const youngAdult: string[] = [];
+    const fiction: string[] = [];
+
+    for (const g of filtered) {
+      const lower = g.trim().toLowerCase();
+      if (youngAdultLowerSet.has(lower)) {
+        youngAdult.push(g);
+      } else if (fictionLowerSet.has(lower)) {
+        fiction.push(g);
+      } else {
+        others.push(g);
+      }
+    }
+
+    return [...others, ...youngAdult, ...fiction];
+  }
+
+  const selectedGenres = useMemo(
+    () => reorderManualGenresForYAAndFiction(parseGenresPreserveOrder(genre)),
+    [genre]
+  );
   const selectedGenreSet = useMemo(() => new Set(selectedGenres), [selectedGenres]);
   const selectedGenreLowerSet = useMemo(
     () => new Set(selectedGenres.map((g) => g.toLowerCase())),
@@ -246,10 +278,9 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       return;
     }
 
-    // Preserve assignment order: new genre goes to the end, no re-sorting.
+    // Re-order so manual genres are always before Young Adult / Fictie.
     const ordered = [...current, resolved];
-
-    const finalGenre = ordered.join(", ");
+    const finalGenre = reorderManualGenresForYAAndFiction(ordered).join(", ");
     setGenre(finalGenre);
     updateBook({ genre: finalGenre || undefined });
     setGenreQuickAdd("");
@@ -281,7 +312,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     const nextSelected = parseGenresPreserveOrder(genre).filter(
       (p) => p.toLowerCase() !== targetLower
     );
-    const nextValue = nextSelected.join(", ");
+    const nextValue = reorderManualGenresForYAAndFiction(nextSelected).join(", ");
     setGenre(nextValue);
     updateBook({ genre: nextValue || undefined });
     setGenreQuickAdd("");
@@ -622,7 +653,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       return;
     }
     const finalSeriesName = seriesName.trim() || undefined;
-    const finalGenre = parseGenresPreserveOrder(genre).join(", ");
+    const finalGenre = selectedGenres.join(", ");
     const updatedBooks = books.map((b) =>
       b.id === book.id
         ? {
@@ -955,7 +986,8 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                   return;
                 }
 
-                const joined = pillLabels.join(", ");
+                const finalLabels = reorderManualGenresForYAAndFiction(pillLabels);
+                const joined = finalLabels.join(", ");
                 setGenre(joined);
                 setGoodreadsPasteInputText("");
                 setActiveGenreSuggestionIndex(-1);
@@ -1001,7 +1033,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                     const ordered = isSelected
                       ? current.filter((x) => x !== g)
                       : [...current, g].filter(Boolean);
-                    const finalGenre = ordered.join(", ");
+                    const finalGenre = reorderManualGenresForYAAndFiction(ordered).join(", ");
                     setGenre(finalGenre);
                     updateBook({ genre: finalGenre || undefined });
                   }}

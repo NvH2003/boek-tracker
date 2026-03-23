@@ -11,18 +11,18 @@ export const STANDARD_SHELF_GENRES: readonly string[] = [
   "Christian",
   "Classics",
   "Comics",
-  "Contemporary",
+  "Christmas",
   "Cookbooks",
   "Crime",
   "Fantasy",
   "Fiction",
+  "Magical Realism",
   "Gay and Lesbian",
   "Graphic Novels",
   "Historical Fiction",
   "History",
   "Horror",
   "Humor and Comedy",
-  "Magical Realism",
   "Manga",
   "Memoir",
   "Music",
@@ -41,6 +41,7 @@ export const STANDARD_SHELF_GENRES: readonly string[] = [
   "Sports",
   "Thriller",
   "Travel",
+  "Summer",
   "Young Adult"
 ] as const;
 

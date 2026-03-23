@@ -15,13 +15,14 @@ export const GOODREADS_CLIPBOARD_ALLOWLIST: readonly string[] = [
   "Christian",
   "Classics",
   "Comics",
-  "Contemporary",
+  "Christmas",
   "Cookbooks",
   "Crime",
   "Dark Romance",
   "Erotica",
   "Fantasy",
   "Fiction",
+  "Magical Realism",
   "Gay and Lesbian",
   "Graphic Novels",
   "Historical Fiction",
@@ -47,6 +48,7 @@ export const GOODREADS_CLIPBOARD_ALLOWLIST: readonly string[] = [
   "Sports",
   "Thriller",
   "Travel",
+  "Summer",
   "Young Adult",
 ];
 
@@ -192,24 +194,19 @@ export function parseGoodreadsClipboardTextToPillLabels(text: string): string[] 
   }
 
   // Rule (ordering in pills):
-  // - "Young Adult" + "Hedendaags" net voor "Fictie"
+  // - "Young Adult" net voor "Fictie"
   // - ze mogen niet als eerste komen, tenzij er geen andere genres zijn.
-  const fictionLower = "fictie";
-  const hedendaagsLower = "hedendaags";
-  const youngAdultLower = "young adult";
+  const fictionLowerSet = new Set(["fictie", "fiction"]);
+  const youngAdultLowerSet = new Set(["young adult", "jong volwassenen"]);
 
-  const isFiction = (x: string) => x.trim().toLowerCase() === fictionLower;
-  const isHedendaags = (x: string) => x.trim().toLowerCase() === hedendaagsLower;
-  const isYoungAdult = (x: string) => x.trim().toLowerCase() === youngAdultLower;
+  const isFiction = (x: string) => fictionLowerSet.has(x.trim().toLowerCase());
+  const isYoungAdult = (x: string) => youngAdultLowerSet.has(x.trim().toLowerCase());
 
   const fictionLabels = deduped.filter(isFiction);
-  const specialLabels = deduped.filter((x) => isHedendaags(x) || isYoungAdult(x));
-  const others = deduped.filter((x) => !isFiction(x) && !isHedendaags(x) && !isYoungAdult(x));
+  const specialLabels = deduped.filter(isYoungAdult);
+  const others = deduped.filter((x) => !isFiction(x) && !isYoungAdult(x));
 
-  if (fictionLabels.length > 0) {
-    return [...others, ...specialLabels, ...fictionLabels];
-  }
-
+  if (fictionLabels.length > 0) return [...others, ...specialLabels, ...fictionLabels];
   return [...others, ...specialLabels];
 }
 
