@@ -445,11 +445,25 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         deduped.push(g.trim());
       }
 
-      // Rule: "Fictie" (komt van clipboard-label "Fiction") altijd achteraan in de pills.
-      const ficLower = "fictie";
-      const fictionLabels = deduped.filter((x) => x.trim().toLowerCase() === ficLower);
-      const withoutFiction = deduped.filter((x) => x.trim().toLowerCase() !== ficLower);
-      const ordered = fictionLabels.length > 0 ? [...withoutFiction, ...fictionLabels] : deduped;
+      // Rule (ordering in pills):
+      // - "Young Adult" + "Hedendaags" net voor "Fictie"
+      // - ze mogen niet als eerste komen, tenzij er geen andere genres zijn.
+      const fictionLower = "fictie";
+      const hedendaagsLower = "hedendaags";
+      const youngAdultLower = "young adult";
+
+      const isFiction = (x: string) => x.trim().toLowerCase() === fictionLower;
+      const isHedendaags = (x: string) => x.trim().toLowerCase() === hedendaagsLower;
+      const isYoungAdult = (x: string) => x.trim().toLowerCase() === youngAdultLower;
+
+      const fictionLabels = deduped.filter(isFiction);
+      const specialLabels = deduped.filter((x) => isHedendaags(x) || isYoungAdult(x));
+      const others = deduped.filter((x) => !isFiction(x) && !isHedendaags(x) && !isYoungAdult(x));
+
+      const ordered =
+        fictionLabels.length > 0
+          ? [...others, ...specialLabels, ...fictionLabels]
+          : [...others, ...specialLabels];
 
       const final = ordered.join(", ");
       setGenre(final);
