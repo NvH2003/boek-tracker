@@ -24,6 +24,7 @@ export const GOODREADS_CLIPBOARD_ALLOWLIST: readonly string[] = [
   "Fiction",
   "Magical Realism",
   "Gay and Lesbian",
+  "LGBT",
   "Graphic Novels",
   "Historical Fiction",
   "History",
@@ -74,6 +75,9 @@ const EXPLICIT_OUTPUT_BY_LOWER: Record<string, string> = {
   // Speciale vertalingen
   "humor and comedy": "Humor en Comedy",
   romance: "Roman",
+
+  // Alias (Goodreads label -> jouw pill-label)
+  "gay and lesbian": "LGBT",
 };
 
 function normalizeFromClipboard(text: string): string {
