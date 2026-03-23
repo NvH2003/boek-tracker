@@ -6,6 +6,7 @@ import { translateGenreToDutch } from "./genreTranslations";
 // - (niet vertalen): output exact dezelfde label als allowlist
 // - Humor and Comedy + Romance: speciale vertaling volgens verzoek
 export const GOODREADS_CLIPBOARD_ALLOWLIST: readonly string[] = [
+  "Adventure",
   "Art",
   "Autobiography",
   "Biography",
