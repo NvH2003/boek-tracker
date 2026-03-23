@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { loadBooks, loadShelves, saveBooks, subscribeBooks } from "../storage";
+import { loadBooks, loadShelves, saveBooks, saveShelves, subscribeBooks } from "../storage";
 import { Book, ReadStatus, Shelf } from "../types";
 import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
@@ -318,7 +318,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     setGenreQuickAdd("");
   }
 
-  const shelves = useMemo(() => loadShelves(), []);
+  const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
   const bookPlanks = useMemo(() => {
     const ids = book?.shelfIds ?? [];
     return ids
@@ -326,6 +326,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       .filter((s): s is NonNullable<typeof s> => s != null)
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [book?.shelfIds, shelves]);
+  const [newShelfName, setNewShelfName] = useState("");
 
   function persist(updatedBooks: Book[]) {
     setBooks(updatedBooks);
@@ -636,14 +637,44 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     updateBook({ shelfIds: shelfIds.length ? shelfIds : undefined });
   }
 
-  const customShelves = useMemo(
-    () => shelves.filter((s: Shelf) => !s.system),
-    [shelves]
+  const standardShelvesToAdd = useMemo(
+    () =>
+      shelves
+        .filter((s: Shelf) => s.system && !(book?.shelfIds ?? []).includes(s.id))
+        .sort((a, b) => a.name.localeCompare(b.name, "nl-NL")),
+    [shelves, book?.shelfIds]
+  );
+  const customShelvesToAdd = useMemo(
+    () =>
+      shelves
+        .filter((s: Shelf) => !s.system && !(book?.shelfIds ?? []).includes(s.id))
+        .sort((a, b) => a.name.localeCompare(b.name, "nl-NL")),
+    [shelves, book?.shelfIds]
   );
   const shelvesToAdd = useMemo(
-    () => customShelves.filter((s) => !(book?.shelfIds ?? []).includes(s.id)),
-    [customShelves, book?.shelfIds]
+    () => [...standardShelvesToAdd, ...customShelvesToAdd],
+    [standardShelvesToAdd, customShelvesToAdd]
   );
+
+  function createShelfAndAddToBook() {
+    const name = newShelfName.trim();
+    if (!name) return;
+
+    const lower = name.toLowerCase();
+    const exists = shelves.find((s) => s.name.trim().toLowerCase() === lower);
+    if (exists) {
+      addBookToPlank(exists.id);
+      setNewShelfName("");
+      return;
+    }
+
+    const created: Shelf = { id: `shelf-${Date.now()}`, name };
+    const next = [...shelves, created];
+    saveShelves(next);
+    setShelves(next);
+    addBookToPlank(created.id);
+    setNewShelfName("");
+  }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -820,16 +851,45 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                 aria-label="Toevoegen aan boekenkast"
               >
                 <option value="">+ Toevoegen aan boekenkast</option>
-                {shelvesToAdd.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
+                {standardShelvesToAdd.length > 0 && (
+                  <optgroup label="Standaard boekenkasten">
+                    {standardShelvesToAdd.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {customShelvesToAdd.length > 0 && (
+                  <optgroup label="Eigen boekenkasten">
+                    {customShelvesToAdd.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             )}
           </div>
+          <div className="genre-pill-add-row" style={{ marginTop: "0.5rem" }}>
+            <input
+              type="text"
+              value={newShelfName}
+              onChange={(e) => setNewShelfName(e.target.value)}
+              placeholder="Nieuwe boekenkast naam..."
+            />
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!newShelfName.trim()}
+              onClick={createShelfAndAddToBook}
+            >
+              Boekenkast toevoegen
+            </button>
+          </div>
           {bookPlanks.length === 0 && shelvesToAdd.length === 0 && (
-            <p className="book-detail-planks-hint">Geen eigen boekenkasten. Maak een boekenkast aan via Boekenkasten.</p>
+            <p className="book-detail-planks-hint">Nog geen boekenkasten gekoppeld. Voeg er hierboven een toe.</p>
           )}
         </div>
         <div className="form-field">
