@@ -326,7 +326,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       .filter((s): s is NonNullable<typeof s> => s != null)
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [book?.shelfIds, shelves]);
-  const [newShelfName, setNewShelfName] = useState("");
 
   function persist(updatedBooks: Book[]) {
     setBooks(updatedBooks);
@@ -656,15 +655,14 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     [standardShelvesToAdd, customShelvesToAdd]
   );
 
-  function createShelfAndAddToBook() {
-    const name = newShelfName.trim();
+  function createShelfAndAddToBook(rawName: string) {
+    const name = rawName.trim();
     if (!name) return;
 
     const lower = name.toLowerCase();
     const exists = shelves.find((s) => s.name.trim().toLowerCase() === lower);
     if (exists) {
       addBookToPlank(exists.id);
-      setNewShelfName("");
       return;
     }
 
@@ -673,7 +671,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     saveShelves(next);
     setShelves(next);
     addBookToPlank(created.id);
-    setNewShelfName("");
   }
 
   function handleSubmit(e: FormEvent) {
@@ -837,56 +834,46 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                 </button>
               </span>
             ))}
-            {shelvesToAdd.length > 0 && (
-              <select
-                className="book-detail-add-plank-select"
-                value=""
-                onChange={(e) => {
-                  const shelfId = e.target.value;
-                  if (shelfId) {
-                    addBookToPlank(shelfId);
-                    e.target.value = "";
-                  }
-                }}
-                aria-label="Toevoegen aan boekenkast"
-              >
-                <option value="">+ Toevoegen aan boekenkast</option>
-                {standardShelvesToAdd.length > 0 && (
-                  <optgroup label="Standaard boekenkasten">
-                    {standardShelvesToAdd.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                {customShelvesToAdd.length > 0 && (
-                  <optgroup label="Eigen boekenkasten">
-                    {customShelvesToAdd.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            )}
-          </div>
-          <div className="genre-pill-add-row" style={{ marginTop: "0.5rem" }}>
-            <input
-              type="text"
-              value={newShelfName}
-              onChange={(e) => setNewShelfName(e.target.value)}
-              placeholder="Nieuwe boekenkast naam..."
-            />
-            <button
-              type="button"
-              className="secondary-button"
-              disabled={!newShelfName.trim()}
-              onClick={createShelfAndAddToBook}
+            <select
+              className="book-detail-add-plank-select"
+              value=""
+              onChange={(e) => {
+                const shelfId = e.target.value;
+                if (!shelfId) return;
+
+                if (shelfId === "__new__") {
+                  const typed = window.prompt("Nieuwe boekenkast naam:", "")?.trim() ?? "";
+                  if (typed) createShelfAndAddToBook(typed);
+                  e.target.value = "";
+                  return;
+                }
+
+                addBookToPlank(shelfId);
+                e.target.value = "";
+              }}
+              aria-label="Toevoegen aan boekenkast"
             >
-              Boekenkast toevoegen
-            </button>
+              <option value="">+ Toevoegen aan boekenkast</option>
+              <option value="__new__">+ Nieuwe boekenkast toevoegen...</option>
+              {standardShelvesToAdd.length > 0 && (
+                <optgroup label="Standaard boekenkasten">
+                  {standardShelvesToAdd.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {customShelvesToAdd.length > 0 && (
+                <optgroup label="Eigen boekenkasten">
+                  {customShelvesToAdd.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
           </div>
           {bookPlanks.length === 0 && shelvesToAdd.length === 0 && (
             <p className="book-detail-planks-hint">Nog geen boekenkasten gekoppeld. Voeg er hierboven een toe.</p>
