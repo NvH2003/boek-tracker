@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { loadBooks, loadShelves, saveBooks, subscribeBooks } from "../storage";
 import { Book, ReadStatus, Shelf } from "../types";
@@ -6,6 +6,90 @@ import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
 import { parseGenres, parseGenresPreserveOrder } from "../genreUtils";
 import { isSupabaseConfigured, supabase } from "../supabase";
+import { translateGenreToDutch } from "../genreTranslations";
+import { parseGoodreadsClipboardTextToPillLabels } from "../goodreadsClipboardGenres";
+
+const GOODREADS_GENRE_CLIPBOARD_ALLOWLIST: readonly string[] = [
+  "Art",
+  "Autobiography",
+  "Biography",
+  "Business",
+  "Chick Lit",
+  "Children's",
+  "Christian",
+  "Classics",
+  "Comics",
+  "Contemporary",
+  "Cookbooks",
+  "Crime",
+  "Dark Romance",
+  "Erotica",
+  "Fantasy",
+  "Fiction",
+  "Gay and Lesbian",
+  "Graphic Novels",
+  "Historical Fiction",
+  "History",
+  "Horror",
+  "Humor and Comedy",
+  "Manga",
+  "Memoir",
+  "Music",
+  "Mystery",
+  "Nonfiction",
+  "Paranormal",
+  "Philosophy",
+  "Poetry",
+  "Psychology",
+  "Religion",
+  "Romance",
+  "Science Fiction",
+  "Science",
+  "Self Help",
+  "Spirituality",
+  "Sports",
+  "Thriller",
+  "Travel",
+  "Young Adult",
+];
+
+const GOODREADS_GENRE_CLIPBOARD_OUTPUT_BY_LOWER: Record<string, string> = {
+  // Niet vertalen: exact label (zoals in allowlist)
+  "chick lit": "Chick Lit",
+  crime: "Crime",
+  "dark romance": "Dark Romance",
+  erotica: translateGenreToDutch("Erotica"), // wél vertalen (niet gemarkeerd als niet-vertalen)
+  fantasy: "Fantasy",
+  manga: "Manga",
+  mystery: "Mystery",
+  "science fiction": "Science Fiction",
+  "thriller": "Thriller",
+  "young adult": "Young Adult",
+
+  // Vertalen specifiek zoals opgegeven
+  "humor and comedy": "Humor en Comedy",
+  romance: "Roman",
+
+  // Voor alle overige allowlist items: vertaal met standaard mapping
+};
+
+const GOODREADS_GENRE_CLIPBOARD_ALLOWLIST_LOWER_SET = new Set(
+  GOODREADS_GENRE_CLIPBOARD_ALLOWLIST.map((s) => s.toLowerCase())
+);
+
+function mapClipboardGenreToPillLabel(clipboardLabel: string): string | null {
+  const label = clipboardLabel.trim();
+  if (!label) return null;
+  const lower = label.toLowerCase();
+  if (!GOODREADS_GENRE_CLIPBOARD_ALLOWLIST_LOWER_SET.has(lower)) return null;
+
+  // Niet/anders vertalen waar opgegeven.
+  const explicit = GOODREADS_GENRE_CLIPBOARD_OUTPUT_BY_LOWER[lower];
+  if (explicit) return explicit;
+
+  // Overige allowlist: vertaal naar NL.
+  return translateGenreToDutch(label);
+}
 
 const STATUS_LABELS: Record<ReadStatus, string> = {
   "wil-ik-lezen": "Wil ik lezen",
@@ -61,6 +145,8 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     book?.seriesNumber?.toString() ?? ""
   );
   const [genre, setGenre] = useState<string>(book?.genre ?? "");
+  const genreRef = useRef(genre);
+  genreRef.current = genre;
   const [genreQuickAdd, setGenreQuickAdd] = useState<string>("");
   const [activeGenreSuggestionIndex, setActiveGenreSuggestionIndex] = useState<number>(-1);
   const [order, setOrder] = useState<string>(
@@ -73,6 +159,11 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   const [description, setDescription] = useState<string>(book?.description ?? "");
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [isFetchingGoodreadsGenres, setIsFetchingGoodreadsGenres] = useState(false);
+  const [goodreadsPasteNotice, setGoodreadsPasteNotice] = useState<string | null>(null);
+  const [goodreadsPasteNoticeIsSuccess, setGoodreadsPasteNoticeIsSuccess] =
+    useState<boolean>(false);
+  const goodreadsPasteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [goodreadsPasteInputText, setGoodreadsPasteInputText] = useState<string>("");
 
   // Haal alle unieke serie namen op
   const existingSeries = useMemo(() => {
@@ -205,6 +296,180 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [book?.shelfIds, shelves]);
 
+  function persist(updatedBooks: Book[]) {
+    setBooks(updatedBooks);
+    saveBooks(updatedBooks);
+  }
+
+  function updateBook(updates: Partial<Book>) {
+    if (!book) return;
+    const updated = books.map((b) => (b.id === book.id ? { ...b, ...updates } : b));
+    persist(updated);
+    if (updates.status !== undefined) setStatus(updates.status);
+  }
+
+  function parseGoodreadsGenresClipboardText(text: string): string[] {
+    const raw = text.trim();
+    if (!raw) return [];
+
+    // Vaak: "Genres: Fiction, Fantasy, ..." of alleen de lijst.
+    const withoutPrefix = raw
+      .replace(/^\s*Genres\s*:\s*/i, "")
+      .replace(/^\s*Genre\s*:\s*/i, "");
+
+    // 1) Normaliseer scheidingstekens (komma is het enige waar parseGenresPreserveOrder op werkt).
+    let normalized = withoutPrefix
+      .replace(/[•●·]+/g, ",")
+      .replace(/[\r\n]+/g, ",")
+      .replace(/[;|]+/g, ",")
+      .replace(/,\s*,/g, ",")
+      .replace(/\s*,\s*/g, ",")
+      .trim();
+
+    // Soms komt het als "FictionFantasy" (plakfout) of "Young AdultScience Fiction".
+    normalized = normalized.replace(/([a-z])([A-Z])/g, "$1,$2").trim();
+
+    const parsedAll = parseGenresPreserveOrder(normalized)
+      .map((g) => g.trim())
+      .filter((g) => g.length > 1 && !/^genres?$/i.test(g));
+
+    // Filter: we willen alleen de opgegeven genres als (automatische) pills tonen.
+    const allowedFromDelimiters = parsedAll.filter((g) =>
+      GOODREADS_GENRE_CLIPBOARD_ALLOWLIST_LOWER_SET.has(g.toLowerCase())
+    );
+    if (allowedFromDelimiters.length > 0) return allowedFromDelimiters;
+
+    // 2) Fallback: plak kan alles als 1 lange tekst geven zonder delimiters.
+    // We zoeken dan alleen de opgegeven clipboard-genres terug als substrings (langste eerst),
+    // en verwijderen overlappende matches (bv. "Historical Fiction" wint van "Fiction").
+    const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const lower = normalized.toLowerCase();
+
+    const candidates = [...GOODREADS_GENRE_CLIPBOARD_ALLOWLIST]
+      .sort((a, b) => b.length - a.length)
+      .map((label) => ({ label, re: new RegExp(escapeRegExp(label), "gi") }));
+
+    type Match = { label: string; start: number; end: number; len: number };
+    const matches: Match[] = [];
+
+    for (const c of candidates) {
+      let m: RegExpExecArray | null;
+      while ((m = c.re.exec(lower))) {
+        const start = m.index;
+        const end = start + m[0].length;
+        const before = start === 0 ? "" : lower[start - 1];
+        const after = end >= lower.length ? "" : lower[end];
+        const beforeOk = start === 0 || !/[a-z]/i.test(before);
+        const afterOk = end >= lower.length || !/[a-z]/i.test(after);
+        if (!beforeOk || !afterOk) continue;
+        matches.push({ label: c.label, start, end, len: c.label.length });
+
+        // Veiligheidsstop: voorkom extreem veel matches.
+        if (matches.length > 120) break;
+      }
+      if (matches.length > 120) break;
+    }
+
+    // Sorteer: eerst links, bij zelfde positie: langste eerst.
+    matches.sort((a, b) => a.start - b.start || b.len - a.len);
+
+    const accepted: Match[] = [];
+    const rangesOverlap = (a: Match, b: Match) =>
+      Math.max(a.start, b.start) < Math.min(a.end, b.end);
+
+    for (const m of matches) {
+      if (accepted.some((a) => rangesOverlap(a, m))) continue;
+      // Dedupe op label: behoud de eerste (meest links / langst)
+      if (accepted.some((a) => a.label.toLowerCase() === m.label.toLowerCase())) continue;
+      accepted.push(m);
+      if (accepted.length >= 18) break;
+    }
+
+    accepted.sort((a, b) => a.start - b.start);
+    const parsedFromMatches = accepted.map((m) => m.label);
+    if (parsedFromMatches.length > 0) return parsedFromMatches;
+
+    // 3) Laatste fallback: split op dubbele spaties en probeer opnieuw.
+    const parts = normalized
+      .split(/\s{2,}/g)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (parts.length > 1) {
+      const partsParsed = parseGenresPreserveOrder(parts.join(", ")).filter(
+        (g) => g.length > 1 && GOODREADS_GENRE_CLIPBOARD_ALLOWLIST_LOWER_SET.has(g.toLowerCase())
+      );
+      if (partsParsed.length > 0) return partsParsed;
+    }
+
+    return [];
+  }
+
+  async function handlePasteGoodreadsGenresFromClipboard() {
+    setGoodreadsPasteNotice(null);
+    setGoodreadsPasteNoticeIsSuccess(false);
+
+    if (typeof navigator === "undefined" || !navigator.clipboard?.readText) {
+      setGoodreadsPasteNotice(
+        "Plakken uit klembord lukt niet in deze browser. Kopieer de genres op Goodreads en plak ze handmatig."
+      );
+      setGoodreadsPasteNoticeIsSuccess(false);
+      window.setTimeout(() => setGoodreadsPasteNotice(null), 6500);
+      return;
+    }
+
+    setIsFetchingGoodreadsGenres(true);
+    try {
+      const text = await navigator.clipboard.readText();
+      const parsed = parseGoodreadsGenresClipboardText(text);
+      if (parsed.length === 0) {
+        throw new Error("Geen genres gevonden in je klembordtekst.");
+      }
+
+      const mapped = parsed
+        .map((g) => mapClipboardGenreToPillLabel(g))
+        .filter((x): x is string => Boolean(x));
+
+      if (mapped.length === 0) {
+        throw new Error(
+          "Geen genres uit je klembordmatch met de toegestane lijst. Controleer of je de juiste labels kopieert."
+        );
+      }
+
+      const seen = new Set<string>();
+      const deduped: string[] = [];
+      for (const g of mapped) {
+        const k = g.trim().toLowerCase();
+        if (!k) continue;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        deduped.push(g.trim());
+      }
+
+      // Rule: "Fictie" (komt van clipboard-label "Fiction") altijd achteraan in de pills.
+      const ficLower = "fictie";
+      const fictionLabels = deduped.filter((x) => x.trim().toLowerCase() === ficLower);
+      const withoutFiction = deduped.filter((x) => x.trim().toLowerCase() !== ficLower);
+      const ordered = fictionLabels.length > 0 ? [...withoutFiction, ...fictionLabels] : deduped;
+
+      const final = ordered.join(", ");
+      setGenre(final);
+      setGenreQuickAdd("");
+      setActiveGenreSuggestionIndex(-1);
+      updateBook({ genre: final || undefined });
+
+      setGoodreadsPasteNotice("Goodreads genres geplakt en opgeslagen.");
+      setGoodreadsPasteNoticeIsSuccess(true);
+      window.setTimeout(() => setGoodreadsPasteNotice(null), 3200);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "Onbekende fout";
+      setGoodreadsPasteNotice(`Plakken lukt niet: ${detail}`);
+      setGoodreadsPasteNoticeIsSuccess(false);
+      window.setTimeout(() => setGoodreadsPasteNotice(null), 6500);
+    } finally {
+      setIsFetchingGoodreadsGenres(false);
+    }
+  }
+
   if (!book) {
     return (
       <div className="page">
@@ -229,18 +494,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         </button>
       </div>
     );
-  }
-
-  function persist(updatedBooks: Book[]) {
-    setBooks(updatedBooks);
-    saveBooks(updatedBooks);
-  }
-
-  function updateBook(updates: Partial<Book>) {
-    if (!book) return;
-    const updated = books.map((b) => (b.id === book.id ? { ...b, ...updates } : b));
-    persist(updated);
-    if (updates.status !== undefined) setStatus(updates.status);
   }
 
   function deleteSeriesEverywhere(rawName: string) {
@@ -271,14 +524,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     if (!title && !authors) return null;
     const q = [title, authors].filter(Boolean).join(" ");
     return `https://www.goodreads.com/search?q=${encodeURIComponent(q)}`;
-  }
-
-  function getGoogleBooksSearchUrl(t?: string, a?: string): string | null {
-    const title = t?.trim();
-    const authors = a?.trim();
-    if (!title && !authors) return null;
-    const q = [title, authors].filter(Boolean).join(" ");
-    return `https://books.google.nl/books?q=${encodeURIComponent(q)}`;
   }
 
   function openInAdjacentWindow(url: string) {
@@ -395,8 +640,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       navigate(withBase(basePath, "/boeken"));
     }
   }
-
-  const googleBooksGenreUrl = getGoogleBooksSearchUrl(title, authors);
 
   return (
     <div className={`page ${isModal ? "book-detail-modal-content" : ""}`}>
@@ -654,57 +897,88 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         </div>
         <div className="form-field">
           <span>Genre (optioneel)</span>
-          {googleBooksGenreUrl && (
-            <button
-              type="button"
-              className="link-button"
-              disabled={isFetchingGoodreadsGenres}
-              aria-label="Haal categorieën op via Google Books"
-              onClick={async (e) => {
+          <div className="goodreads-genre-actions" style={{ marginBottom: "0.4rem" }}>
+            {getGoodreadsSearchUrl(title, authors) && (
+              <button
+                type="button"
+                className="link-button"
+                disabled={isFetchingGoodreadsGenres}
+                aria-label="Open Goodreads (zoek)"
+                onClick={() => {
+                  const url = getGoodreadsSearchUrl(title, authors);
+                  if (!url) return;
+                  const opened = openInAdjacentWindow(url);
+                  if (!opened) window.open(url, "book_lookup_shared");
+                }}
+              >
+                Open Goodreads (zoek)
+              </button>
+            )}
+          </div>
+          <label className="form-field goodreads-paste-field">
+            <span>Goodreads genres (plakken)</span>
+            <p className="page-intro-small">
+              We lezen enkel de toegestane Goodreads-genres en zetten alleen die als pills (rest wordt genegeerd).
+            </p>
+            <textarea
+              ref={goodreadsPasteTextareaRef}
+              className="profile-input goodreads-paste-textarea"
+              value={goodreadsPasteInputText}
+              onChange={(e) => setGoodreadsPasteInputText(e.target.value)}
+              placeholder="Kopieer op Goodreads de regel met Genres (bijv. 'Genres: Fantasy, Fiction, Romance') en plak hier (Ctrl+V)."
+              rows={4}
+              spellCheck={false}
+              onPaste={(e) => {
                 e.preventDefault();
-                e.stopPropagation();
-
-                if (!isSupabaseConfigured() || !supabase) {
-                  const opened = openInAdjacentWindow(googleBooksGenreUrl);
-                  if (!opened) window.open(googleBooksGenreUrl, "book_lookup_shared");
+                const text = e.clipboardData.getData("text") ?? "";
+                const pillLabels = parseGoodreadsClipboardTextToPillLabels(text);
+                if (pillLabels.length === 0) {
+                  setGoodreadsPasteNotice(
+                    "Geen toegestane genres gevonden. Kopieer de regel 'Genres: ...' uit Goodreads."
+                  );
+                  setGoodreadsPasteNoticeIsSuccess(false);
+                  window.setTimeout(() => setGoodreadsPasteNotice(null), 6500);
                   return;
                 }
 
-                setIsFetchingGoodreadsGenres(true);
-                try {
-                  const resp = await (supabase as any).functions.invoke("goodreads-genres-nl", {
-                    method: "POST",
-                    body: { title, authors },
-                  });
+                const joined = pillLabels.join(", ");
+                setGenre(joined);
+                setGoodreadsPasteInputText("");
+                setActiveGenreSuggestionIndex(-1);
+                updateBook({ genre: joined || undefined });
 
-                  const genres: string[] | undefined = resp?.data?.genres ?? resp?.genres;
-                  if (!Array.isArray(genres) || genres.length === 0) {
-                    throw new Error("Geen genres teruggekregen");
-                  }
-
-                  const joined = genres.filter(Boolean).join(", ");
-                  setGenre(joined);
-                  setGenreQuickAdd("");
-                  setActiveGenreSuggestionIndex(-1);
-                  updateBook({ genre: joined || undefined });
-                } catch {
-                  const opened = openInAdjacentWindow(googleBooksGenreUrl);
-                  if (!opened) window.open(googleBooksGenreUrl, "book_lookup_shared");
-                } finally {
-                  setIsFetchingGoodreadsGenres(false);
+                setGoodreadsPasteNotice("Goodreads genres geplakt en opgeslagen.");
+                setGoodreadsPasteNoticeIsSuccess(true);
+                window.setTimeout(() => setGoodreadsPasteNotice(null), 3200);
+              }}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+                  // Laat onPaste de parsing doen.
+                  return;
                 }
               }}
+            />
+          </label>
+          {goodreadsPasteNotice ? (
+            <p
+              className={goodreadsPasteNoticeIsSuccess ? "form-success" : "form-error"}
+              role="alert"
+              style={{ marginTop: "0.2rem" }}
             >
-              {isFetchingGoodreadsGenres ? "Genres ophalen..." : "Genres ophalen"}
-            </button>
-          )}
+              {goodreadsPasteNotice}
+            </p>
+          ) : null}
           <div className="genre-pill-container">
             {genrePillsForSelect.length === 0 ? (
-              <span className="page-intro-small">Geen genres gevonden. Voeg er één toe.</span>
+              <span className="page-intro-small">
+                {isFetchingGoodreadsGenres
+                  ? "Even geduld…"
+                  : "Geen genres. Open Goodreads (zoek), kopieer 'Genres: ...' en plak in het tekstveld."}
+              </span>
             ) : (
-              genrePillsForSelect.map((g) => (
+              genrePillsForSelect.map((g, idx) => (
                 <button
-                  key={g}
+                  key={`detail-genre-${idx}-${g}`}
                   type="button"
                   className={`genre-pill ${selectedGenreSet.has(g) ? "selected" : ""}`}
                   onClick={() => {

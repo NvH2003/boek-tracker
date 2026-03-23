@@ -1,11 +1,21 @@
 import { FormEvent, useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Book, ReadStatus, Shelf } from "../types";
-import { loadBooks, loadChallenge, loadShelves, saveShelves, saveBooks, subscribeBooks, addBookSnapshotsToMyLibrary } from "../storage";
+import {
+  loadBooks,
+  loadChallenge,
+  loadShelves,
+  saveShelves,
+  saveBooks,
+  subscribeBooks,
+  addBookSnapshotsToMyLibrary
+} from "../storage";
 import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
 import { formatGenresPreserveOrder, parseGenres, parseGenresPreserveOrder } from "../genreUtils";
 import { supabase, isSupabaseConfigured } from "../supabase";
+import { getGoogleBooksBrowserApiKey } from "../googleBooksBrowserKey";
+import { parseGoodreadsClipboardTextToPillLabels } from "../goodreadsClipboardGenres";
 
 interface SearchResult {
   id: string;
@@ -38,10 +48,7 @@ const GOOGLE_BOOKS_API = "https://www.googleapis.com/books/v1/volumes";
 const OPEN_LIBRARY_SEARCH_API = "https://openlibrary.org/search.json";
 const ITUNES_SEARCH_API = "https://itunes.apple.com/search";
 
-const GOOGLE_BOOKS_API_KEY =
-  typeof import.meta !== "undefined"
-    ? ((import.meta as any).env?.VITE_GOOGLE_BOOKS_API_KEY as string | undefined)
-    : undefined;
+const GOOGLE_BOOKS_API_KEY = getGoogleBooksBrowserApiKey();
 
 const ITUNES_COUNTRY =
   typeof import.meta !== "undefined"
@@ -116,6 +123,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   const [manualGenre, setManualGenre] = useState("");
   const [manualGenreQuickAdd, setManualGenreQuickAdd] = useState("");
   const [activeGenreSuggestionIndex, setActiveGenreSuggestionIndex] = useState<number>(-1);
+  const [goodreadsPasteInputText, setGoodreadsPasteInputText] = useState<string>("");
+  const goodreadsPasteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [manualShelfIds, setManualShelfIds] = useState<string[]>([]);
   const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
   const [addToShelfResult, setAddToShelfResult] = useState<SearchResult | null>(null);
@@ -3213,62 +3222,74 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
               </label>
               <label className="form-field">
                 <span>Genre (optioneel)</span>
-                {getGoogleBooksSearchUrl(manualTitle, manualAuthors) && (
-                  <button
-                    type="button"
-                    className="link-button"
-                    disabled={isFetchingGoodreadsGenres}
-                    aria-label="Haal categorieën op via Google Books"
-                    onClick={async (e) => {
+                <div
+                  className="goodreads-genre-actions"
+                  style={{ marginBottom: "0.4rem" }}
+                >
+                  {getGoodreadsSearchUrl(manualTitle, manualAuthors) && (
+                    <button
+                      type="button"
+                      className="link-button"
+                      disabled={isFetchingGoodreadsGenres}
+                      aria-label="Open Goodreads (zoek)"
+                      onClick={() => {
+                        const url = getGoodreadsSearchUrl(manualTitle, manualAuthors);
+                        if (!url) return;
+                        const opened = openInAdjacentWindow(url);
+                        if (!opened) window.open(url, "book_lookup_shared");
+                      }}
+                    >
+                      Open Goodreads (zoek)
+                    </button>
+                  )}
+                </div>
+                <div className="goodreads-paste-field" style={{ marginTop: "0.35rem" }}>
+                  <span>Goodreads genres (plakken)</span>
+                  <p className="page-intro-small">
+                    We lezen enkel de toegestane Goodreads-genres en zetten alleen die als pills (rest wordt genegeerd).
+                  </p>
+                  <textarea
+                    ref={goodreadsPasteTextareaRef}
+                    className="profile-input goodreads-paste-textarea"
+                    value={goodreadsPasteInputText}
+                    onChange={(e) => setGoodreadsPasteInputText(e.target.value)}
+                    placeholder="Kopieer op Goodreads de regel met Genres (bijv. 'Genres: Fantasy, Fiction, Romance') en plak hier (Ctrl+V)."
+                    rows={4}
+                    spellCheck={false}
+                    onPaste={(e) => {
                       e.preventDefault();
-                      const fallbackUrl = getGoogleBooksSearchUrl(manualTitle, manualAuthors);
-                      if (!fallbackUrl) return;
-
-                      // Fallback: open Google Books als Supabase/edge function niet beschikbaar is.
-                      if (!isSupabaseConfigured() || !supabase) {
-                        const opened = openInAdjacentWindow(fallbackUrl);
-                        if (!opened) window.open(fallbackUrl, "book_lookup_shared");
+                      const text = e.clipboardData.getData("text") ?? "";
+                      const pillLabels =
+                        parseGoodreadsClipboardTextToPillLabels(text);
+                      if (pillLabels.length === 0) {
+                        setToast(
+                          "Geen toegestane genres gevonden. Kopieer de regel 'Genres: ...' uit Goodreads."
+                        );
+                        window.setTimeout(() => setToast(""), 6500);
                         return;
                       }
 
-                      setIsFetchingGoodreadsGenres(true);
-                      try {
-                        const resp = await (supabase as any).functions.invoke("goodreads-genres-nl", {
-                          method: "POST",
-                          body: { title: manualTitle, authors: manualAuthors },
-                        });
-
-                        const genres: string[] | undefined = resp?.data?.genres ?? resp?.genres;
-                        if (!Array.isArray(genres) || genres.length === 0) {
-                          throw new Error("Geen genres teruggekregen");
-                        }
-
-                        const joined = genres.filter(Boolean).join(", ");
-                        setManualGenre(joined);
-                        setManualGenreQuickAdd("");
-                        setActiveGenreSuggestionIndex(-1);
-                        setToast("Categorieën opgehaald (Google Books).");
-                        window.setTimeout(() => setToast(""), 2500);
-                      } catch {
-                        setToast("Ophalen lukt niet. Open Google Books (fallback).");
-                        window.setTimeout(() => setToast(""), 3500);
-                        const opened = openInAdjacentWindow(fallbackUrl);
-                        if (!opened) window.open(fallbackUrl, "book_lookup_shared");
-                      } finally {
-                        setIsFetchingGoodreadsGenres(false);
-                      }
+                      const joined = pillLabels.join(", ");
+                      setManualGenre(joined);
+                      setManualGenreQuickAdd("");
+                      setActiveGenreSuggestionIndex(-1);
+                      setGoodreadsPasteInputText("");
+                      setToast("Genres geplakt en opgeslagen.");
+                      window.setTimeout(() => setToast(""), 2500);
                     }}
-                  >
-                    {isFetchingGoodreadsGenres ? "Genres ophalen..." : "Genres ophalen"}
-                  </button>
-                )}
+                  />
+                </div>
                 <div className="genre-pill-container">
                   {genrePillsForSelect.length === 0 ? (
-                    <span className="page-intro-small">Geen genres gevonden. Voeg er één toe.</span>
+                    <span className="page-intro-small">
+                      {isFetchingGoodreadsGenres
+                        ? "Even geduld…"
+                        : "Geen genres. Open Goodreads (zoek), kopieer 'Genres: ...' en plak in het tekstveld."}
+                    </span>
                   ) : (
-                    genrePillsForSelect.map((g) => (
+                    genrePillsForSelect.map((g, idx) => (
                       <button
-                        key={g}
+                        key={`manual-genre-${idx}-${g}`}
                         type="button"
                         className={`genre-pill ${selectedGenreSet.has(g) ? "selected" : ""}`}
                         onClick={() => {

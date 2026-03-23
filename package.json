@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "check-env": "node scripts/check-google-env.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

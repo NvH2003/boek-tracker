@@ -1388,6 +1388,106 @@ select {
   color: #64748b;
 }
 
+.profile-genre-allowlist-section {
+  margin-top: 1.25rem;
+}
+
+.profile-genre-allowlist-section .form-field {
+  margin-bottom: 0.75rem;
+}
+
+.profile-genre-allowlist-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 7rem;
+  font-family: inherit;
+  line-height: 1.45;
+}
+
+.genre-assist-hint {
+  margin: 0.35rem 0 0.6rem;
+  max-width: 42rem;
+  line-height: 1.45;
+}
+
+.genre-assist-hint-muted {
+  opacity: 0.88;
+}
+
+button.genre-assist-inline-btn {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  vertical-align: baseline;
+  font-size: inherit;
+}
+
+.standard-genres-disclosure {
+  margin: 0.65rem 0 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.35);
+  padding: 0.35rem 0.65rem 0.65rem;
+}
+
+.standard-genres-summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  list-style: none;
+  user-select: none;
+}
+
+.standard-genres-summary::-webkit-details-marker {
+  display: none;
+}
+
+.standard-genres-summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.standard-genres-disclosure[open] .standard-genres-summary::before {
+  transform: rotate(90deg);
+}
+
+.standard-genres-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  max-height: 12rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.standard-genre-chip {
+  font-size: 0.78rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  background: rgba(30, 27, 75, 0.45);
+  color: #c7d2fe;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.standard-genre-chip:hover:not(:disabled) {
+  border-color: rgba(129, 140, 248, 0.65);
+  background: rgba(49, 46, 129, 0.5);
+}
+
+.standard-genre-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.standard-genre-chip--added {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #86efac;
+}
+
 .profile-save-btn {
   flex-shrink: 0;
 }
@@ -4434,6 +4534,22 @@ select {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #9ca3af;
+}
+
+/* Genre paste (Goodreads) moet tekst niet in uppercase */
+.book-detail-form .form-field.goodreads-paste-field span:first-child,
+.goodreads-paste-field span:first-child {
+  text-transform: none;
+  letter-spacing: 0;
+  color: #cbd5f5;
+  font-size: 0.8rem;
+}
+
+.book-detail-form .goodreads-paste-textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  padding: 0.75rem 0.85rem;
 }
 
 .book-detail-form .book-detail-planks {

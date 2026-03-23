@@ -9,6 +9,7 @@ const FRIEND_REQUESTS_KEY = "bt_friend_requests_v1";
 const FRIENDS_KEY = "bt_friends_v1";
 const SHARED_INBOX_KEY = "bt_shared_inbox_v1";
 const SHELF_VIEW_SETTINGS_KEY = "bt_shelf_view_settings_v1";
+const GENRE_FETCH_ALLOWLIST_KEY = "bt_genre_fetch_allowlist_v1";
 
 function booksKey(): string {
   const u = getCurrentUsername();
@@ -37,6 +38,10 @@ function sharedInboxKey(username: string): string {
 function shelfViewSettingsKey(): string {
   const u = getCurrentUsername();
   return u ? `${SHELF_VIEW_SETTINGS_KEY}_${u}` : SHELF_VIEW_SETTINGS_KEY;
+}
+function genreFetchAllowlistKey(): string {
+  const u = getCurrentUsername();
+  return u ? `${GENRE_FETCH_ALLOWLIST_KEY}_${u}` : GENRE_FETCH_ALLOWLIST_KEY;
 }
 
 /** Sortering en groepering per boekenkast, gekoppeld aan account. */
@@ -72,6 +77,43 @@ export function saveShelfViewSettings(settings: ShelfViewSettings): void {
     .then(() => {});
 }
 
+/**
+ * Genres die je toestaat bij automatisch ophalen / “Genres ophalen”.
+ * Lege lijst = alle API-suggesties (standaard).
+ */
+export function loadGenreFetchAllowlist(): string[] {
+  try {
+    const raw = window.localStorage.getItem(genreFetchAllowlistKey());
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((x) => String(x).trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export function saveGenreFetchAllowlist(items: string[]): void {
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const s of items) {
+    const t = s.trim();
+    if (!t) continue;
+    const k = t.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    cleaned.push(t);
+  }
+  window.localStorage.setItem(genreFetchAllowlistKey(), JSON.stringify(cleaned));
+  if (!isSupabaseConfigured() || !supabase) return;
+  const userId = getCurrentUserId();
+  if (!userId) return;
+  supabase
+    .from("user_data")
+    .upsert({ user_id: userId, key: "genre_fetch_allowlist", value: cleaned }, { onConflict: "user_id,key" })
+    .then(() => {});
+}
+
 /** Sync alle data van Supabase naar localStorage (na login / session restore). */
 export async function syncFromSupabase(): Promise<void> {
   if (!isSupabaseConfigured() || !supabase) return;
@@ -95,6 +137,10 @@ export async function syncFromSupabase(): Promise<void> {
         groupModeByShelf: settings.groupModeByShelf ?? {},
         groupSortRules: settings.groupSortRules ?? {}
       }));
+    }
+    if (byKey.genre_fetch_allowlist != null && Array.isArray(byKey.genre_fetch_allowlist)) {
+      const list = (byKey.genre_fetch_allowlist as unknown[]).map((x) => String(x).trim()).filter(Boolean);
+      window.localStorage.setItem(genreFetchAllowlistKey(), JSON.stringify(list));
     }
   }
 
@@ -129,6 +175,7 @@ export async function pushLocalToSupabase(): Promise<void> {
   const friends = loadFriends();
   const inbox = loadSharedInbox();
   const shelfViewSettings = loadShelfViewSettings();
+  const genreFetchAllowlist = loadGenreFetchAllowlist();
 
   await Promise.all([
     supabase.from("user_data").upsert({ user_id: userId, key: "books", value: books }, { onConflict: "user_id,key" }),
@@ -138,6 +185,9 @@ export async function pushLocalToSupabase(): Promise<void> {
       : Promise.resolve(),
     supabase.from("user_data").upsert({ user_id: userId, key: "friends", value: friends }, { onConflict: "user_id,key" }),
     supabase.from("user_data").upsert({ user_id: userId, key: "shelf_view_settings", value: shelfViewSettings }, { onConflict: "user_id,key" }),
+    supabase
+      .from("user_data")
+      .upsert({ user_id: userId, key: "genre_fetch_allowlist", value: genreFetchAllowlist }, { onConflict: "user_id,key" }),
     supabase.from("shared_inbox").upsert({ user_id: userId, items: inbox }, { onConflict: "user_id" })
   ]);
 }

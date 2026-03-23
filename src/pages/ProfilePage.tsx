@@ -13,6 +13,8 @@ import { useZoom } from "../ZoomContext";
 import {
   loadShelves,
   saveShelves,
+  loadGenreFetchAllowlist,
+  saveGenreFetchAllowlist,
   loadFriends,
   getPendingReceivedRequests,
   getPendingSentRequests,
@@ -26,6 +28,7 @@ import {
   addBookSnapshotsToMyLibrary,
   dismissSharedItem
 } from "../storage";
+import { parseGenreAllowlistTextarea } from "../fetchBookGenres";
 import { getCurrentUsername, getExistingUsernames, changePassword, deleteAccount, refreshAuthCache } from "../auth";
 
 const DISPLAY_NAME_KEY = "bt_user_name";
@@ -68,6 +71,9 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
   const [showSharedInboxModal, setShowSharedInboxModal] = useState(false);
   const [sharedAddMessage, setSharedAddMessage] = useState<{ added: number; skipped: number } | null>(null);
   const [toast, setToast] = useState("");
+  const [genreAllowlistText, setGenreAllowlistText] = useState(() =>
+    loadGenreFetchAllowlist().join("\n")
+  );
   /** Per shared-item index: set van boek-indices die geselecteerd zijn */
   const [selectedSharedBookIndices, setSelectedSharedBookIndices] = useState<Map<number, Set<number>>>(() => new Map());
   const [showShelfPickerForItem, setShowShelfPickerForItem] = useState<number | null>(null);
@@ -118,6 +124,13 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
     setSharedInbox(loadSharedInbox());
   }
 
+  function handleSaveGenreAllowlist() {
+    const items = parseGenreAllowlistTextarea(genreAllowlistText);
+    saveGenreFetchAllowlist(items);
+    setToast("Genrelijst voor suggesties opgeslagen.");
+    window.setTimeout(() => setToast(""), 2800);
+  }
+
   function toggleSharedBookSelection(itemIndex: number, bookIndex: number) {
     setSelectedSharedBookIndices((prev) => {
       const next = new Map(prev);
@@ -150,6 +163,10 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
     return selectedSharedBookIndices.get(itemIndex)?.size ?? 0;
   }
 
+  useEffect(() => {
+    setGenreAllowlistText(loadGenreFetchAllowlist().join("\n"));
+  }, [username]);
+
   // Bij openen van Profiel: gebruikerslijst vernieuwen (Supabase)
   useEffect(() => {
     refreshAuthCache().then((res) => {
@@ -181,6 +198,9 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
       if (e.key?.startsWith(DISPLAY_NAME_KEY)) setName(window.localStorage.getItem(displayNameKey()) ?? "");
       if (e.key?.startsWith("bt_friends_v1") || e.key === "bt_friend_requests_v1") refreshFriendState();
       if (e.key?.startsWith("bt_shared_inbox_v1")) refreshSharedInbox();
+      if (e.key?.startsWith("bt_genre_fetch_allowlist_v1")) {
+        setGenreAllowlistText(loadGenreFetchAllowlist().join("\n"));
+      }
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -347,6 +367,30 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
           </button>
         </div>
       </div>
+
+      <section className="card profile-genre-allowlist-section" aria-labelledby="genre-allowlist-heading">
+        <h2 id="genre-allowlist-heading">Toegestane genres bij ophalen</h2>
+        <p className="page-intro-small">
+          Optioneel: alleen suggesties van Google Books / Open Library tonen die bij <strong>jouw</strong> termen
+          passen (hoofdletter maakt niet uit). Één term per regel of komma&apos;s. Bijvoorbeeld:{" "}
+          <em>Fantasy</em>, <em>Science fiction</em>, <em>Young adult</em>.{" "}
+          <strong>Leeg laten</strong> = alle suggesties zoals nu.
+        </p>
+        <label className="form-field">
+          <span>Jouw genre-termen</span>
+          <textarea
+            value={genreAllowlistText}
+            onChange={(e) => setGenreAllowlistText(e.target.value)}
+            rows={6}
+            placeholder={"Fantasy\nThriller\nGraphic novel"}
+            className="profile-input profile-genre-allowlist-textarea"
+            spellCheck={false}
+          />
+        </label>
+        <button type="button" className="primary-button" onClick={handleSaveGenreAllowlist}>
+          Genrelijst opslaan
+        </button>
+      </section>
 
       {showAccountModal && (
         <div className="modal-backdrop" onClick={() => setShowAccountModal(false)}>
