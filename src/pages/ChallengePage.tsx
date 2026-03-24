@@ -698,19 +698,22 @@ export function ChallengePage() {
     setChallenge(updated);
   }
 
-  /** Vul je cumulatieve bladzijde in voor een boek op een dag; alle dagen erna worden gesynchroniseerd met dezelfde waarde. */
+  /** Vul je cumulatieve bladzijde in voor één boek; sync alleen naar volgende dagen voor datzelfde boek. */
   function updateDailyReadingPerBook(date: string, bookId: string, cumulativePages: number) {
     if (!challenge?.weeklyChallenge) return;
     const range = getWeekDateRange();
     const fromIdx = range.indexOf(date);
     const perBook = { ...(challenge.dailyReadingPerBook || {}) };
+
+    // Sync alleen dit boek vanaf gekozen dag naar de dagen erna.
     for (let i = fromIdx >= 0 ? fromIdx : 0; i < range.length; i++) {
       const d = range[i];
       perBook[d] = { ...perBook[d], [bookId]: cumulativePages };
     }
+
     const dailyReading = { ...challenge.dailyReading };
-    for (let i = fromIdx >= 0 ? fromIdx : 0; i < range.length; i++) {
-      const d = range[i];
+    // Herbereken dagtotalen op basis van per-book waardes.
+    for (const d of range) {
       const tot = challenge.weeklyChallenge.books.reduce(
         (sum, p) => sum + (perBook[d]?.[p.bookId] ?? 0),
         0
@@ -750,6 +753,25 @@ export function ChallengePage() {
     previousCumulative = challenge.dailyReading?.[previousDateStr] || 0;
     const newCumulative = previousCumulative + goal.target;
     updateDailyReading(goal.date, Math.ceil(newCumulative));
+  }
+
+  /** Laatst bekende cumulatieve pagina voor dit boek t/m deze dag. */
+  function getBookCumulativeThroughDate(date: string, bookId: string): number | "" {
+    if (!challenge?.weeklyChallenge) return "";
+    const perBook = challenge.dailyReadingPerBook || {};
+    const range = getWeekDateRange();
+    const toIdx = range.indexOf(date);
+    if (toIdx < 0) return "";
+
+    let latest: number | undefined;
+    for (let i = 0; i <= toIdx; i++) {
+      const d = range[i];
+      const v = perBook[d]?.[bookId];
+      if (typeof v === "number" && !Number.isNaN(v)) {
+        latest = v;
+      }
+    }
+    return latest ?? "";
   }
 
   function clearChallenge() {
@@ -1765,9 +1787,10 @@ export function ChallengePage() {
                       {!isNoReadDay && hasTargets ? (
                         (goal.bookTargets ?? []).map((bt) => {
                           const raw = challenge.dailyReadingPerBook?.[goal.date]?.[bt.bookId];
-                          const bookValue = raw !== undefined && raw !== null
-                            ? raw
-                            : (goal.bookTargets!.length === 1 ? goal.cumulativePages : "");
+                          const bookValue =
+                            raw !== undefined && raw !== null
+                              ? raw
+                              : getBookCumulativeThroughDate(goal.date, bt.bookId);
                           const bookComplete = Number(bookValue) >= bt.cumulativePage;
                           return (
                             <div key={bt.bookId} className="daily-goal-book-block">
