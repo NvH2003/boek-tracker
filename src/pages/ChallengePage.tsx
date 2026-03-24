@@ -117,6 +117,37 @@ export function ChallengePage() {
   const [weekSelectedBookIds, setWeekSelectedBookIds] = useState<string[]>([]);
   const [weekReadingDaysByBook, setWeekReadingDaysByBook] = useState<Record<string, string[]>>({});
 
+  function getPlanFirstReadDate(plan: WeeklyBookPlan): string {
+    const dates = Object.keys(plan.dailyPages).filter((d) => (plan.dailyPages[d] || 0) > 0);
+    if (dates.length === 0) return "9999-12-31";
+    dates.sort();
+    return dates[0];
+  }
+
+  function compareWeekPlansForDisplay(a: WeeklyBookPlan, b: WeeklyBookPlan): number {
+    const aBook = books.find((x) => x.id === a.bookId);
+    const bBook = books.find((x) => x.id === b.bookId);
+
+    // Boek waar je al in leest eerst.
+    const aStatusRank = aBook?.status === "aan-het-lezen" ? 0 : aBook?.status === "wil-ik-lezen" ? 1 : 2;
+    const bStatusRank = bBook?.status === "aan-het-lezen" ? 0 : bBook?.status === "wil-ik-lezen" ? 1 : 2;
+    if (aStatusRank !== bStatusRank) return aStatusRank - bStatusRank;
+
+    // Daarna: boek dat eerder in de week start, komt hoger.
+    const aFirstDate = getPlanFirstReadDate(a);
+    const bFirstDate = getPlanFirstReadDate(b);
+    if (aFirstDate !== bFirstDate) return aFirstDate.localeCompare(bFirstDate);
+
+    // Daarna: ingestelde volgorde op boek (voor serievolgorde), dan titel.
+    const aOrder = aBook?.order ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = bBook?.order ?? Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+
+    const aTitle = aBook?.title ?? "";
+    const bTitle = bBook?.title ?? "";
+    return aTitle.localeCompare(bTitle, "nl-NL");
+  }
+
   function syncWeekBooksDraft(count: number) {
     setWeekBooksDraft((prev) => {
       const next = [...prev];
@@ -371,6 +402,7 @@ export function ChallengePage() {
 
     // Bereken doelen per dag op basis van weekchallenge of legacy
     if (weekChallenge) {
+      const sortedWeekPlans = [...weekChallenge.books].sort(compareWeekPlansForDisplay);
       const dailyReadingPerBook = challenge.dailyReadingPerBook || {};
       const usePerBook =
         Object.keys(dailyReadingPerBook).length > 0;
@@ -393,7 +425,7 @@ export function ChallengePage() {
       
       for (const day of allDays) {
         let dayTotal = 0;
-        weekChallenge.books.forEach(book => {
+        sortedWeekPlans.forEach(book => {
           dayTotal += book.dailyPages[day.dateStr] || 0;
         });
         targetPagesPerDay[day.dateStr] = dayTotal;
@@ -449,7 +481,7 @@ export function ChallengePage() {
       for (let i = 0; i < allDays.length; i++) {
         const day = allDays[i];
         const targets: Array<{ bookId: string; bookTitle: string; cumulativePage: number; totalPages: number }> = [];
-        weekChallenge.books.forEach((plan, planIdx) => {
+        sortedWeekPlans.forEach((plan, planIdx) => {
           const pagesThisDay = plan.dailyPages[day.dateStr] || 0;
           if (pagesThisDay <= 0) return;
           let cum = 0;
@@ -988,6 +1020,7 @@ export function ChallengePage() {
                     </p>
                     {(() => {
                       const wc = challenge.weeklyChallenge!;
+                      const sortedPlans = [...wc.books].sort(compareWeekPlansForDisplay);
                       const totalPages = wc.books.reduce(
                         (sum, b) => sum + (b.totalPages || 0),
                         0
@@ -1001,7 +1034,7 @@ export function ChallengePage() {
                       const daysCount = readingDaySet.size;
                       const perDay =
                         daysCount > 0 ? Math.ceil(totalPages / daysCount) : 0;
-                      const related = wc.books
+                      const related = sortedPlans
                         .map((plan) => books.find((b) => b.id === plan.bookId))
                         .filter(Boolean) as typeof books;
                       if (!totalPages || !daysCount) return null;
@@ -1092,6 +1125,7 @@ export function ChallengePage() {
               </p>
               {(() => {
                 const wc = challenge.weeklyChallenge!;
+                const sortedPlans = [...wc.books].sort(compareWeekPlansForDisplay);
                 const totalPages = wc.books.reduce(
                   (sum, b) => sum + (b.totalPages || 0),
                   0
@@ -1102,7 +1136,7 @@ export function ChallengePage() {
                 });
                 const daysCount = readingDaySet.size;
                 const perDay = daysCount > 0 ? Math.ceil(totalPages / daysCount) : 0;
-                const related = wc.books
+                const related = sortedPlans
                   .map((plan) => books.find((b) => b.id === plan.bookId))
                   .filter(Boolean) as typeof books;
                 if (!totalPages || !daysCount) return null;
