@@ -1,21 +1,23 @@
 import { FormEvent, useMemo, useState } from "react";
-import { useBasePath } from "../routing";
+import { Link } from "react-router-dom";
+import {
+  compareWeekPlansForDisplay,
+  computeDailyGoals,
+  formatChallengeDate as formatDate,
+  getBookCumulativeThroughDate as getBookCumulativeFromChallenge,
+  getWeekDateRangeFromChallenge,
+  parseChallengeDateString as getDateFromString
+} from "../challengeDailyGoals";
+import {
+  applyLegacyDailyReading,
+  applyPerBookDailyReading
+} from "../challengeReadingProgress";
+import { useBasePath, withBase } from "../routing";
 import { loadBooks, loadChallenge, saveChallenge } from "../storage";
 import { ReadingChallenge, WeeklyBookPlan, WeeklyChallenge } from "../types";
 
 /** Later weer inschakelen: "Geen tijd deze dag" bij dagelijkse leesdoelen */
 const SHOW_OFFDAY_UI = false;
-
-function formatDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function getDateFromString(dateStr: string): Date {
-  return new Date(dateStr + "T00:00:00");
-}
 
 /** Formaat voor tonen: dag-maand-jaar (bijv. 05-02-2026) */
 function formatDateDisplay(dateStr: string): string {
@@ -116,37 +118,6 @@ export function ChallengePage() {
   });
   const [weekSelectedBookIds, setWeekSelectedBookIds] = useState<string[]>([]);
   const [weekReadingDaysByBook, setWeekReadingDaysByBook] = useState<Record<string, string[]>>({});
-
-  function getPlanFirstReadDate(plan: WeeklyBookPlan): string {
-    const dates = Object.keys(plan.dailyPages).filter((d) => (plan.dailyPages[d] || 0) > 0);
-    if (dates.length === 0) return "9999-12-31";
-    dates.sort();
-    return dates[0];
-  }
-
-  function compareWeekPlansForDisplay(a: WeeklyBookPlan, b: WeeklyBookPlan): number {
-    const aBook = books.find((x) => x.id === a.bookId);
-    const bBook = books.find((x) => x.id === b.bookId);
-
-    // Boek waar je al in leest eerst.
-    const aStatusRank = aBook?.status === "aan-het-lezen" ? 0 : aBook?.status === "wil-ik-lezen" ? 1 : 2;
-    const bStatusRank = bBook?.status === "aan-het-lezen" ? 0 : bBook?.status === "wil-ik-lezen" ? 1 : 2;
-    if (aStatusRank !== bStatusRank) return aStatusRank - bStatusRank;
-
-    // Daarna: boek dat eerder in de week start, komt hoger.
-    const aFirstDate = getPlanFirstReadDate(a);
-    const bFirstDate = getPlanFirstReadDate(b);
-    if (aFirstDate !== bFirstDate) return aFirstDate.localeCompare(bFirstDate);
-
-    // Daarna: ingestelde volgorde op boek (voor serievolgorde), dan titel.
-    const aOrder = aBook?.order ?? Number.MAX_SAFE_INTEGER;
-    const bOrder = bBook?.order ?? Number.MAX_SAFE_INTEGER;
-    if (aOrder !== bOrder) return aOrder - bOrder;
-
-    const aTitle = aBook?.title ?? "";
-    const bTitle = bBook?.title ?? "";
-    return aTitle.localeCompare(bTitle, "nl-NL");
-  }
 
   function syncWeekBooksDraft(count: number) {
     setWeekBooksDraft((prev) => {
@@ -350,273 +321,10 @@ export function ChallengePage() {
     setChallenge(updated);
   }
 
-  // Bereken dagelijkse doelen met doorlopende schuld binnen gekozen bereik
-  const dailyGoals = useMemo(() => {
-    // Gebruik weekchallenge als die bestaat, anders legacy weeklyPages
-    const weekChallenge = challenge?.weeklyChallenge;
-    if (!weekChallenge && (!challenge?.weeklyPages || !challenge.startDate || !challenge.endDate)) {
-      return null;
-    }
-
-    const start = weekChallenge 
-      ? getDateFromString(weekChallenge.startDate)
-      : getDateFromString(challenge.startDate!);
-    const end = weekChallenge
-      ? getDateFromString(weekChallenge.endDate)
-      : getDateFromString(challenge.endDate!);
-    start.setHours(0, 0, 0, 0);
-    end.setHours(0, 0, 0, 0);
-
-    if (end < start) return null;
-
-    const dailyReading = challenge.dailyReading || {};
-    // Legacy offDays worden standaard als automatisch verdeeld gezien
-    const legacyOff = new Set(challenge.offDays ?? []);
-    const offDaysAuto = new Set(challenge.offDaysAuto ?? []);
-    const offDaysManual = new Set(challenge.offDaysManual ?? []);
-    const isAutoOff = (dateStr: string) =>
-      offDaysAuto.has(dateStr) || legacyOff.has(dateStr);
-    const isManualOff = (dateStr: string) => offDaysManual.has(dateStr);
-
-    // Verzamel alle dagen in het geselecteerde bereik
-    const goals: Array<{
-      date: string;
-      dateObj: Date;
-      target: number;
-      cumulativePages: number; // Tot welke bladzijde je bent gekomen
-      pagesReadToday: number; // Hoeveel bladzijden je die dag hebt gelezen
-      remaining: number;
-      effectiveRead: number; // Effectieve gelezen bladzijden inclusief latere dagen
-      plannedCumulative?: number; // Geplande bladzijde waarop je zou moeten zijn
-      bookTargets?: Array<{ bookId: string; bookTitle: string; cumulativePage: number; totalPages: number }>; // Per boek: doel en totaal (alleen boeken die die dag te lezen zijn)
-    }> = [];
-
-    const allDays: Array<{ date: Date; dateStr: string }> = [];
-    let dayCursor = new Date(start);
-    while (dayCursor <= end) {
-      const date = new Date(dayCursor);
-      const dateStr = formatDate(date);
-      allDays.push({ date, dateStr });
-      dayCursor.setDate(dayCursor.getDate() + 1);
-    }
-
-    // Bereken doelen per dag op basis van weekchallenge of legacy
-    if (weekChallenge) {
-      const sortedWeekPlans = [...weekChallenge.books].sort(compareWeekPlansForDisplay);
-      const dailyReadingPerBook = challenge.dailyReadingPerBook || {};
-      const usePerBook =
-        Object.keys(dailyReadingPerBook).length > 0;
-      const effectiveDailyReading: Record<string, number> = usePerBook
-        ? {}
-        : { ...dailyReading };
-      if (usePerBook) {
-        allDays.forEach((d) => {
-          effectiveDailyReading[d.dateStr] = weekChallenge.books.reduce(
-            (sum, p) => sum + (dailyReadingPerBook[d.dateStr]?.[p.bookId] ?? 0),
-            0
-          );
-        });
-      }
-
-      // Weekchallenge: combineer alle boeken per dag
-      const targetPagesPerDay: Record<string, number> = {};
-      const plannedCumulativeByDate: Record<string, number> = {};
-      let cumulativeTarget = 0;
-      
-      for (const day of allDays) {
-        let dayTotal = 0;
-        sortedWeekPlans.forEach(book => {
-          dayTotal += book.dailyPages[day.dateStr] || 0;
-        });
-        targetPagesPerDay[day.dateStr] = dayTotal;
-        if (!isAutoOff(day.dateStr) && !isManualOff(day.dateStr)) {
-          cumulativeTarget += dayTotal;
-          plannedCumulativeByDate[day.dateStr] = cumulativeTarget;
-        }
-      }
-
-      // Laat aan het einde van de week dagen zonder geplande pagina's weg
-      let lastWithTarget = allDays.length - 1;
-      while (
-        lastWithTarget >= 0 &&
-        (targetPagesPerDay[allDays[lastWithTarget].dateStr] || 0) === 0
-      ) {
-        lastWithTarget -= 1;
-      }
-      if (lastWithTarget >= 0 && lastWithTarget < allDays.length - 1) {
-        allDays.length = lastWithTarget + 1;
-      }
-      
-      // Bereken cumulatieve bladzijden per dag (totaal, voor voortgang)
-      let previousCumulative = 0;
-      const pagesReadPerDay: number[] = [];
-      const cumulativePagesPerDay: number[] = [];
-      for (const day of allDays) {
-        const cumulative = effectiveDailyReading[day.dateStr] ?? previousCumulative;
-        const pagesRead = Math.max(0, cumulative - previousCumulative);
-        cumulativePagesPerDay.push(cumulative);
-        pagesReadPerDay.push(pagesRead);
-        previousCumulative = cumulative;
-      }
-      
-      // Bereken effectieve gelezen bladzijden
-      const totalReadInPeriod = cumulativePagesPerDay[cumulativePagesPerDay.length - 1] ?? 0;
-      let remainingPages = totalReadInPeriod;
-      const effectiveReads: number[] = [];
-      
-      for (let i = 0; i < allDays.length; i++) {
-        const day = allDays[i];
-        if (isAutoOff(day.dateStr) || isManualOff(day.dateStr)) {
-          effectiveReads.push(0);
-          continue;
-        }
-        const target = targetPagesPerDay[day.dateStr] || 0;
-        const effectiveRead = Math.min(target, remainingPages);
-        effectiveReads.push(effectiveRead);
-        remainingPages = Math.max(0, remainingPages - effectiveRead);
-      }
-      
-      // Per-boek doelen: alleen boeken die op deze dag nog te lezen zijn (dailyPages > 0)
-      const bookTargetsByDay: Array<Array<{ bookId: string; bookTitle: string; cumulativePage: number; totalPages: number }>> = [];
-      for (let i = 0; i < allDays.length; i++) {
-        const day = allDays[i];
-        const targets: Array<{ bookId: string; bookTitle: string; cumulativePage: number; totalPages: number }> = [];
-        sortedWeekPlans.forEach((plan, planIdx) => {
-          const pagesThisDay = plan.dailyPages[day.dateStr] || 0;
-          if (pagesThisDay <= 0) return;
-          let cum = 0;
-          for (let j = 0; j <= i; j++) {
-            cum += plan.dailyPages[allDays[j].dateStr] || 0;
-          }
-          const book = books.find((b) => b.id === plan.bookId);
-          targets.push({
-            bookId: plan.bookId,
-            bookTitle: book?.title ?? `Boek ${planIdx + 1}`,
-            cumulativePage: cum,
-            totalPages: plan.totalPages
-          });
-        });
-        bookTargetsByDay.push(targets);
-      }
-
-      // Maak goals
-      for (let i = 0; i < allDays.length; i++) {
-        const day = allDays[i];
-        const cumulativePages = cumulativePagesPerDay[i];
-        const pagesReadToday = pagesReadPerDay[i];
-        const autoOff = isAutoOff(day.dateStr);
-        const manualOff = isManualOff(day.dateStr);
-        const isOffDay = autoOff || manualOff;
-        const target = isOffDay ? 0 : (targetPagesPerDay[day.dateStr] || 0);
-        const effectiveRead = isOffDay ? 0 : effectiveReads[i];
-        const remaining = isOffDay ? 0 : Math.max(0, target - effectiveRead);
-        
-        goals.push({
-          date: day.dateStr,
-          dateObj: day.date,
-          target: Math.ceil(target),
-          cumulativePages,
-          pagesReadToday: Math.round(pagesReadToday * 10) / 10,
-          effectiveRead: Math.round(effectiveRead * 10) / 10,
-          remaining: Math.ceil(remaining),
-          plannedCumulative: plannedCumulativeByDate[day.dateStr],
-          bookTargets: bookTargetsByDay[i]?.length ? bookTargetsByDay[i] : undefined
-        });
-      }
-    } else {
-      // Legacy: gebruik oude logica met weeklyPages
-      const startPage = challenge.startPage ?? 0;
-      const totalPagesInBook = challenge.weeklyPages!;
-      const pagesToRead = totalPagesInBook - startPage;
-      if (pagesToRead <= 0) return null;
-      
-      const activeDays = allDays.filter(
-        (d) => !isAutoOff(d.dateStr) && !isManualOff(d.dateStr)
-      );
-      if (activeDays.length === 0) return null;
-
-      const pagesPerDay = pagesToRead / activeDays.length;
-
-      // Geplande cumulatieve doelen per actieve dag
-      const plannedCumulativeByDate: Record<string, number> = {};
-      for (let i = 0; i < activeDays.length; i++) {
-        const plannedReadUpTo = Math.ceil((pagesToRead * (i + 1)) / activeDays.length);
-        const plannedTotal = Math.min(startPage + plannedReadUpTo, totalPagesInBook);
-        plannedCumulativeByDate[activeDays[i].dateStr] = plannedTotal;
-      }
-
-      // Bereken cumulatieve bladzijden per dag
-      let previousCumulative = startPage;
-      const pagesReadPerDay: number[] = [];
-      const cumulativePagesPerDay: number[] = [];
-      for (const day of allDays) {
-        const cumulative = dailyReading[day.dateStr] || previousCumulative;
-        const pagesRead = Math.max(0, cumulative - previousCumulative);
-        cumulativePagesPerDay.push(cumulative);
-        pagesReadPerDay.push(pagesRead);
-        previousCumulative = cumulative;
-      }
-      
-      const lastCumulative = cumulativePagesPerDay[cumulativePagesPerDay.length - 1] ?? startPage;
-      const totalReadInPeriod = Math.max(0, lastCumulative - startPage);
-      
-      let remainingPages = totalReadInPeriod;
-      const effectiveReads: number[] = [];
-      let accumulatedDebt = 0;
-
-      for (let i = 0; i < allDays.length; i++) {
-        const day = allDays[i];
-        if (isAutoOff(day.dateStr) || isManualOff(day.dateStr)) {
-          effectiveReads.push(0);
-          continue;
-        }
-        const target = pagesPerDay + accumulatedDebt;
-        const effectiveRead = Math.min(target, remainingPages);
-        effectiveReads.push(effectiveRead);
-        remainingPages = Math.max(0, remainingPages - effectiveRead);
-
-        if (effectiveRead < target) {
-          accumulatedDebt = target - effectiveRead;
-        } else {
-          accumulatedDebt = 0;
-        }
-      }
-      
-      accumulatedDebt = 0;
-      for (let i = 0; i < allDays.length; i++) {
-        const day = allDays[i];
-        const cumulativePages = cumulativePagesPerDay[i];
-        const pagesReadToday = pagesReadPerDay[i];
-        const autoOff = isAutoOff(day.dateStr);
-        const manualOff = isManualOff(day.dateStr);
-        const isOffDay = autoOff || manualOff;
-        const target = isOffDay ? 0 : pagesPerDay + accumulatedDebt;
-        const effectiveRead = isOffDay ? 0 : effectiveReads[i];
-        const remaining = isOffDay ? 0 : Math.max(0, target - effectiveRead);
-
-        if (!autoOff && !manualOff) {
-          if (effectiveRead < target) {
-            accumulatedDebt = target - effectiveRead;
-          } else {
-            accumulatedDebt = 0;
-          }
-        }
-
-        goals.push({
-          date: day.dateStr,
-          dateObj: day.date,
-          target: Math.round(target * 10) / 10,
-          cumulativePages,
-          pagesReadToday: Math.round(pagesReadToday * 10) / 10,
-          effectiveRead: Math.round(effectiveRead * 10) / 10,
-          remaining: Math.round(remaining * 10) / 10,
-          plannedCumulative: plannedCumulativeByDate[day.dateStr]
-        });
-      }
-    }
-    
-    return goals;
-  }, [challenge, books]);
+  const dailyGoals = useMemo(
+    () => computeDailyGoals(challenge, books),
+    [challenge, books]
+  );
 
   const stats = useMemo(() => {
     if (!challenge) return null;
@@ -701,31 +409,14 @@ export function ChallengePage() {
     saveYearChallenge();
   }
 
-  /** Geef alle datums in de week (start t/m end) terug voor doorvoeren naar elke dag. */
   function getWeekDateRange(): string[] {
-    const wc = challenge?.weeklyChallenge;
-    const start = wc ? getDateFromString(wc.startDate) : (challenge?.startDate ? getDateFromString(challenge.startDate) : null);
-    const end = wc ? getDateFromString(wc.endDate) : (challenge?.endDate ? getDateFromString(challenge.endDate) : null);
-    if (!start || !end || end < start) return [];
-    const out: string[] = [];
-    const cur = new Date(start);
-    while (cur <= end) {
-      out.push(formatDate(cur));
-      cur.setDate(cur.getDate() + 1);
-    }
-    return out;
+    return getWeekDateRangeFromChallenge(challenge);
   }
 
   /** Vul je cumulatieve bladzijde in voor een dag; alle dagen erna worden gesynchroniseerd met dezelfde waarde. */
   function updateDailyReading(date: string, cumulativePages: number) {
     if (!challenge) return;
-    const range = getWeekDateRange();
-    const fromIdx = range.indexOf(date);
-    const dailyReading = { ...challenge.dailyReading };
-    for (let i = fromIdx >= 0 ? fromIdx : 0; i < range.length; i++) {
-      dailyReading[range[i]] = cumulativePages;
-    }
-    const updated = { ...challenge, dailyReading };
+    const updated = applyLegacyDailyReading(challenge, date, cumulativePages);
     saveChallenge(updated);
     setChallenge(updated);
   }
@@ -733,30 +424,7 @@ export function ChallengePage() {
   /** Vul je cumulatieve bladzijde in voor één boek; sync alleen naar volgende dagen voor datzelfde boek. */
   function updateDailyReadingPerBook(date: string, bookId: string, cumulativePages: number) {
     if (!challenge?.weeklyChallenge) return;
-    const range = getWeekDateRange();
-    const fromIdx = range.indexOf(date);
-    const perBook = { ...(challenge.dailyReadingPerBook || {}) };
-
-    // Sync alleen dit boek vanaf gekozen dag naar de dagen erna.
-    for (let i = fromIdx >= 0 ? fromIdx : 0; i < range.length; i++) {
-      const d = range[i];
-      perBook[d] = { ...perBook[d], [bookId]: cumulativePages };
-    }
-
-    const dailyReading = { ...challenge.dailyReading };
-    // Herbereken dagtotalen op basis van per-book waardes.
-    for (const d of range) {
-      const tot = challenge.weeklyChallenge.books.reduce(
-        (sum, p) => sum + (perBook[d]?.[p.bookId] ?? 0),
-        0
-      );
-      dailyReading[d] = tot;
-    }
-    const updated = {
-      ...challenge,
-      dailyReadingPerBook: perBook,
-      dailyReading
-    };
+    const updated = applyPerBookDailyReading(challenge, date, bookId, cumulativePages);
     saveChallenge(updated);
     setChallenge(updated);
   }
@@ -787,23 +455,8 @@ export function ChallengePage() {
     updateDailyReading(goal.date, Math.ceil(newCumulative));
   }
 
-  /** Laatst bekende cumulatieve pagina voor dit boek t/m deze dag. */
   function getBookCumulativeThroughDate(date: string, bookId: string): number | "" {
-    if (!challenge?.weeklyChallenge) return "";
-    const perBook = challenge.dailyReadingPerBook || {};
-    const range = getWeekDateRange();
-    const toIdx = range.indexOf(date);
-    if (toIdx < 0) return "";
-
-    let latest: number | undefined;
-    for (let i = 0; i <= toIdx; i++) {
-      const d = range[i];
-      const v = perBook[d]?.[bookId];
-      if (typeof v === "number" && !Number.isNaN(v)) {
-        latest = v;
-      }
-    }
-    return latest ?? "";
+    return getBookCumulativeFromChallenge(challenge, date, bookId);
   }
 
   function clearChallenge() {
@@ -1020,7 +673,7 @@ export function ChallengePage() {
                     </p>
                     {(() => {
                       const wc = challenge.weeklyChallenge!;
-                      const sortedPlans = [...wc.books].sort(compareWeekPlansForDisplay);
+                      const sortedPlans = [...wc.books].sort((a, b) => compareWeekPlansForDisplay(a, b, books));
                       const totalPages = wc.books.reduce(
                         (sum, b) => sum + (b.totalPages || 0),
                         0
@@ -1125,7 +778,7 @@ export function ChallengePage() {
               </p>
               {(() => {
                 const wc = challenge.weeklyChallenge!;
-                const sortedPlans = [...wc.books].sort(compareWeekPlansForDisplay);
+                const sortedPlans = [...wc.books].sort((a, b) => compareWeekPlansForDisplay(a, b, books));
                 const totalPages = wc.books.reduce(
                   (sum, b) => sum + (b.totalPages || 0),
                   0
@@ -1921,6 +1574,16 @@ export function ChallengePage() {
                             </>
                           )}
                         </>
+                      )}
+                      {!isNoReadDay && (
+                        <div className="daily-goal-session-row">
+                          <Link
+                            to={withBase(basePath, `/challenge/leessessie/${goal.date}`)}
+                            className="secondary-button daily-goal-session-link"
+                          >
+                            Start leessessie
+                          </Link>
+                        </div>
                       )}
                       {SHOW_OFFDAY_UI && (
                         <div className="daily-goal-offday-toggle">

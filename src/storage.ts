@@ -10,6 +10,7 @@ const FRIENDS_KEY = "bt_friends_v1";
 const SHARED_INBOX_KEY = "bt_shared_inbox_v1";
 const SHELF_VIEW_SETTINGS_KEY = "bt_shelf_view_settings_v1";
 const GENRE_FETCH_ALLOWLIST_KEY = "bt_genre_fetch_allowlist_v1";
+const READING_PACE_KEY = "bt_reading_pace_v1";
 
 function booksKey(): string {
   const u = getCurrentUsername();
@@ -42,6 +43,73 @@ function shelfViewSettingsKey(): string {
 function genreFetchAllowlistKey(): string {
   const u = getCurrentUsername();
   return u ? `${GENRE_FETCH_ALLOWLIST_KEY}_${u}` : GENRE_FETCH_ALLOWLIST_KEY;
+}
+/** Alle localStorage-keys waar leestempo voor dit account kan staan (uid + username, zodat laden altijd lukt). */
+function collectReadingPaceStorageKeys(): string[] {
+  const keys: string[] = [];
+  const uid = getCurrentUserId();
+  const u = getCurrentUsername();
+  if (uid) keys.push(`${READING_PACE_KEY}_uid_${uid}`);
+  if (u) keys.push(`${READING_PACE_KEY}_${u}`);
+  if (keys.length === 0) keys.push(READING_PACE_KEY);
+  return keys;
+}
+
+function parsePaceRaw(raw: string | null): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+/** Bladzijden per uur voor leessessie-timer; null = niet ingesteld. */
+export function loadReadingPace(): number | null {
+  try {
+    const tryKey = (key: string): number | null =>
+      parsePaceRaw(window.localStorage.getItem(key));
+
+    const uid = getCurrentUserId();
+    if (uid) {
+      const v = tryKey(`${READING_PACE_KEY}_uid_${uid}`);
+      if (v != null) return v;
+    }
+    const u = getCurrentUsername();
+    if (u) {
+      const v = tryKey(`${READING_PACE_KEY}_${u}`);
+      if (v != null) return v;
+    }
+    return tryKey(READING_PACE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeReadingPaceLocalAllKeys(rounded: number | null): void {
+  const keys = collectReadingPaceStorageKeys();
+  if (rounded == null || !Number.isFinite(rounded) || rounded <= 0) {
+    keys.forEach((k) => window.localStorage.removeItem(k));
+  } else {
+    const s = String(Math.round(rounded));
+    keys.forEach((k) => window.localStorage.setItem(k, s));
+  }
+}
+
+export function saveReadingPace(pagesPerHour: number): void {
+  const rounded =
+    Number.isFinite(pagesPerHour) && pagesPerHour > 0 ? Math.round(pagesPerHour) : null;
+  writeReadingPaceLocalAllKeys(rounded);
+
+  if (!isSupabaseConfigured() || !supabase) return;
+  const userId = getCurrentUserId();
+  if (!userId) return;
+  if (rounded == null) {
+    supabase.from("user_data").delete().eq("user_id", userId).eq("key", "reading_pace").then(() => {});
+    return;
+  }
+  supabase
+    .from("user_data")
+    .upsert({ user_id: userId, key: "reading_pace", value: rounded }, { onConflict: "user_id,key" })
+    .then(() => {});
 }
 
 /** Sortering en groepering per boekenkast, gekoppeld aan account. */
@@ -142,6 +210,12 @@ export async function syncFromSupabase(): Promise<void> {
       const list = (byKey.genre_fetch_allowlist as unknown[]).map((x) => String(x).trim()).filter(Boolean);
       window.localStorage.setItem(genreFetchAllowlistKey(), JSON.stringify(list));
     }
+    if (byKey.reading_pace != null) {
+      const p = Number(byKey.reading_pace);
+      if (Number.isFinite(p) && p > 0) {
+        writeReadingPaceLocalAllKeys(Math.round(p));
+      }
+    }
   }
 
   const { data: reqRows } = await supabase.from("friend_requests").select("from_username, to_username, status");
@@ -176,6 +250,7 @@ export async function pushLocalToSupabase(): Promise<void> {
   const inbox = loadSharedInbox();
   const shelfViewSettings = loadShelfViewSettings();
   const genreFetchAllowlist = loadGenreFetchAllowlist();
+  const readingPace = loadReadingPace();
 
   await Promise.all([
     supabase.from("user_data").upsert({ user_id: userId, key: "books", value: books }, { onConflict: "user_id,key" }),
@@ -188,6 +263,11 @@ export async function pushLocalToSupabase(): Promise<void> {
     supabase
       .from("user_data")
       .upsert({ user_id: userId, key: "genre_fetch_allowlist", value: genreFetchAllowlist }, { onConflict: "user_id,key" }),
+    readingPace != null
+      ? supabase
+          .from("user_data")
+          .upsert({ user_id: userId, key: "reading_pace", value: readingPace }, { onConflict: "user_id,key" })
+      : Promise.resolve(),
     supabase.from("shared_inbox").upsert({ user_id: userId, items: inbox }, { onConflict: "user_id" })
   ]);
 }

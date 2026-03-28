@@ -14,6 +14,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { BookDetailPage } from "./pages/BookDetailPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { BuddyReadingListPage } from "./pages/BuddyReadingListPage";
+import { ReadingSessionPage } from "./pages/ReadingSessionPage";
 import { getBasePathFromPathname, withBase } from "./routing";
 
 /** Oude /mobile/*-URL's doorsturen naar korte paden: /mobile/profiel → /profiel */
@@ -238,6 +239,12 @@ export function App() {
             }
           />
           <Route
+            path="/challenge/leessessie/:date"
+            element={
+              isLoggedIn ? <ReadingSessionPage /> : <Navigate to="/login" replace />
+            }
+          />
+          <Route
             path="/profiel"
             element={
               isLoggedIn ? (
@@ -300,6 +307,12 @@ export function App() {
             path="/web/challenge"
             element={
               isLoggedIn ? <ChallengePage /> : <Navigate to="/web/login" replace />
+            }
+          />
+          <Route
+            path="/web/challenge/leessessie/:date"
+            element={
+              isLoggedIn ? <ReadingSessionPage /> : <Navigate to="/web/login" replace />
             }
           />
           <Route

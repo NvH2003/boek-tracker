@@ -6365,4 +6365,304 @@ button.genre-assist-inline-btn {
   text-align: center;
 }
 
+/* Dagkaart: link naar leessessie */
+.daily-goal-session-row {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+.daily-goal-session-link {
+  width: 100%;
+  box-sizing: border-box;
+  text-decoration: none;
+  font-size: 0.72rem;
+  padding: 0.4rem 0.55rem;
+}
+
+/* Profiel: accountvelden (naam + leestempo) */
+.profile-modal-account-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+.profile-field-hint {
+  display: block;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-top: 0.35rem;
+  line-height: 1.35;
+}
+.profile-clear-pace-btn {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+.profile-modal-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Leessessie-pagina (minimal) */
+.reading-session-page {
+  max-width: 22rem;
+  margin: 0 auto;
+}
+.reading-session-header {
+  margin-bottom: 1.25rem;
+}
+.reading-session-back {
+  display: inline-block;
+  margin: 0 0 0.35rem;
+  font-size: 0.875rem;
+  color: #94a3b8;
+  text-decoration: none;
+}
+.reading-session-back:hover {
+  color: #e2e8f0;
+}
+.reading-session-meta-top {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+.reading-session-card {
+  margin-bottom: 0.75rem;
+  padding: 1rem 1.1rem;
+}
+.reading-session-warning {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.35);
+}
+.reading-session-warning a {
+  color: #cbd5e1;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.reading-session-plain {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+.reading-session-plain:last-child {
+  margin-bottom: 0;
+}
+.reading-session-muted-block {
+  margin-bottom: 0.75rem !important;
+  color: #94a3b8 !important;
+}
+.reading-session-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+.reading-session-preset {
+  margin: 0;
+  padding: 0.35rem 0.55rem;
+  min-width: 2.5rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: #94a3b8;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.reading-session-preset:hover {
+  color: #e2e8f0;
+}
+.reading-session-preset.selected {
+  color: #e2e8f0;
+  border-bottom-color: #e2e8f0;
+}
+.reading-session-inline-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  color: #94a3b8;
+}
+.reading-session-inline-label {
+  flex-shrink: 0;
+}
+.reading-session-input-min {
+  width: 4rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 0.35rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.6);
+  color: #e2e8f0;
+  font-size: 0.875rem;
+}
+.reading-session-rule {
+  height: 0;
+  margin: 0.75rem 0 1rem;
+  border: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+.reading-session-plain-list {
+  margin: 0 0 0.75rem;
+  padding: 0 0 0 1rem;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+  line-height: 1.5;
+}
+.reading-session-plain-list li {
+  margin: 0.2rem 0;
+}
+.reading-session-start-btn {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+.reading-session-start-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+.reading-session-book-pick-list {
+  list-style: none;
+  padding-left: 0;
+}
+.reading-session-book-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  cursor: pointer;
+  color: #cbd5e1;
+}
+.reading-session-book-label input {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+.reading-session-hint-small {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #64748b;
+}
+.reading-session-timer-block {
+  text-align: center;
+  margin: 0.25rem 0 0.5rem;
+}
+.reading-session-timer-digits {
+  display: block;
+  font-variant-numeric: tabular-nums;
+  font-size: 2.25rem;
+  font-weight: 500;
+  color: #f1f5f9;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+}
+.reading-session-timer-caption {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+.reading-session-faint {
+  color: #64748b;
+}
+.reading-session-done-lead {
+  margin: 0 0 0.65rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+.reading-session-remaining-hint {
+  margin: 0.5rem 0 0.65rem;
+  line-height: 1.45;
+}
+.reading-session-remaining-hint strong {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+.reading-session-done-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.reading-session-done-actions .primary-button,
+.reading-session-done-actions .secondary-button {
+  flex: 1;
+  min-width: 6rem;
+}
+
+.reading-session-page-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0;
+}
+.reading-session-page-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.reading-session-page-field-single {
+  margin-top: 0.35rem;
+}
+.reading-session-page-field-label {
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+.reading-session-page-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.reading-session-page-prefix {
+  font-size: 0.875rem;
+  color: #cbd5e1;
+}
+.reading-session-page-input {
+  width: 5.5rem;
+}
+.reading-session-form-error {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  color: #f87171;
+}
+.reading-session-outcome-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+@media (min-width: 480px) {
+  .reading-session-outcome-row {
+    flex-direction: row;
+  }
+}
+.reading-session-outcome-btn {
+  flex: 1;
+  min-width: 0;
+}
+.reading-session-saved-note {
+  margin-top: 0.75rem;
+  color: #a5b4fc;
+}
+.reading-session-toast {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(22rem, calc(100vw - 2rem));
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  color: #f1f5f9;
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 50;
+}
+
 

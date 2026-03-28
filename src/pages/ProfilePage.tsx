@@ -26,12 +26,15 @@ import {
   addSharedItemToTbr,
   addSharedItemBooksToTbr,
   addBookSnapshotsToMyLibrary,
-  dismissSharedItem
+  dismissSharedItem,
+  loadReadingPace,
+  saveReadingPace
 } from "../storage";
 import { parseGenreAllowlistTextarea } from "../fetchBookGenres";
 import { getCurrentUsername, getExistingUsernames, changePassword, deleteAccount, refreshAuthCache } from "../auth";
 
 const DISPLAY_NAME_KEY = "bt_user_name";
+const READING_PACE_PREFIX = "bt_reading_pace_v1";
 
 function displayNameKey(): string {
   const u = getCurrentUsername();
@@ -49,6 +52,10 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
   const [name, setName] = useState<string>(
     () => window.localStorage.getItem(displayNameKey()) ?? ""
   );
+  const [pagesPerHour, setPagesPerHour] = useState<string>(() => {
+    const p = loadReadingPace();
+    return p != null ? String(p) : "";
+  });
 
   const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
   const [newName, setNewName] = useState("");
@@ -167,6 +174,19 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
     setGenreAllowlistText(loadGenreFetchAllowlist().join("\n"));
   }, [username]);
 
+  useEffect(() => {
+    const p = loadReadingPace();
+    setPagesPerHour(p != null ? String(p) : "");
+  }, [username]);
+
+  /** Bij openen accountmodal: altijd weergavenaam en leestempo uit storage (na sync / andere tab). */
+  useEffect(() => {
+    if (!showAccountModal) return;
+    setName(window.localStorage.getItem(displayNameKey()) ?? "");
+    const p = loadReadingPace();
+    setPagesPerHour(p != null ? String(p) : "");
+  }, [showAccountModal]);
+
   // Bij openen van Profiel: gebruikerslijst vernieuwen (Supabase)
   useEffect(() => {
     refreshAuthCache().then((res) => {
@@ -196,6 +216,10 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
     function onStorage(e: StorageEvent) {
       if (e.key?.startsWith("bt_shelves_v1")) setShelves(loadShelves());
       if (e.key?.startsWith(DISPLAY_NAME_KEY)) setName(window.localStorage.getItem(displayNameKey()) ?? "");
+      if (e.key?.startsWith(READING_PACE_PREFIX)) {
+        const p = loadReadingPace();
+        setPagesPerHour(p != null ? String(p) : "");
+      }
       if (e.key?.startsWith("bt_friends_v1") || e.key === "bt_friend_requests_v1") refreshFriendState();
       if (e.key?.startsWith("bt_shared_inbox_v1")) refreshSharedInbox();
       if (e.key?.startsWith("bt_genre_fetch_allowlist_v1")) {
@@ -251,9 +275,38 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
 
   function saveProfile(e: FormEvent) {
     e.preventDefault();
+    // Leestempo eerst: zo wordt het altijd opgeslagen, ook als de weergavenaam (nog) leeg is.
+    const paceTrim = pagesPerHour.trim();
+    let nextPaceInField = "";
+    let paceWritten = false;
+    if (paceTrim !== "") {
+      const n = Number(paceTrim);
+      if (Number.isFinite(n) && n >= 1) {
+        const rounded = Math.round(n);
+        saveReadingPace(rounded);
+        nextPaceInField = String(rounded);
+        paceWritten = true;
+      }
+    }
+    if (nextPaceInField === "") {
+      const stored = loadReadingPace();
+      nextPaceInField = stored != null ? String(stored) : "";
+    }
+    setPagesPerHour(nextPaceInField);
+
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      if (paceWritten) {
+        setToast("Leestempo opgeslagen. Vul een weergavenaam in.");
+      } else {
+        setToast("Vul een weergavenaam in.");
+      }
+      window.setTimeout(() => setToast(""), 3200);
+      return;
+    }
     window.localStorage.setItem(displayNameKey(), trimmed);
+    setToast("Profiel opgeslagen.");
+    window.setTimeout(() => setToast(""), 2200);
   }
 
   function handleSendFriendRequest(username: string) {
@@ -396,7 +449,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
         <div className="modal-backdrop" onClick={() => setShowAccountModal(false)}>
           <div className="modal profile-account-modal" onClick={(e) => e.stopPropagation()}>
             <h3>Mijn account bewerken</h3>
-            <form onSubmit={saveProfile} className="profile-form-row profile-modal-form-row">
+            <form onSubmit={saveProfile} className="profile-modal-account-fields">
               <label className="profile-field profile-field-grow">
                 <span className="profile-field-label">Weergavenaam</span>
                 <input
@@ -407,9 +460,41 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                   className="profile-input"
                 />
               </label>
-              <button type="submit" className="primary-button">
-                Opslaan
-              </button>
+              <label className="profile-field profile-field-grow">
+                <span className="profile-field-label">Bladzijden per uur (leestempo)</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={pagesPerHour}
+                  onChange={(e) => setPagesPerHour(e.target.value.replace(/\D/g, ""))}
+                  placeholder="Bijv. 30"
+                  className="profile-input"
+                />
+                <span className="profile-field-hint">
+                  Voor leessessies op de lees-challenge. Klik op Opslaan om te bewaren; het blijft staan
+                  tot je het aanpast en opnieuw opslaat.
+                </span>
+                {loadReadingPace() != null && (
+                  <button
+                    type="button"
+                    className="link-button profile-clear-pace-btn"
+                    onClick={() => {
+                      saveReadingPace(0);
+                      setPagesPerHour("");
+                      setToast("Leestempo gewist.");
+                      window.setTimeout(() => setToast(""), 2200);
+                    }}
+                  >
+                    Leestempo wissen
+                  </button>
+                )}
+              </label>
+              <div className="profile-modal-form-actions">
+                <button type="submit" className="primary-button">
+                  Opslaan
+                </button>
+              </div>
             </form>
             <h4 className="profile-modal-subtitle">Wachtwoord wijzigen</h4>
             <form onSubmit={handleChangePassword} className="password-form profile-password-form">
