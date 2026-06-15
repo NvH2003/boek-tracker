@@ -1,8 +1,7 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useBasePath, withBase } from "../routing";
-import { runMigration, runRenameNoaToNoavHelvoirt, setCurrentUser, verifyLogin } from "../auth";
-import { syncFromSupabase, pushLocalToSupabase } from "../storage";
+import { verifyLogin } from "../auth";
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -14,17 +13,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [migratedMessage, setMigratedMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    runMigration().then((r) => {
-      if (r.migrated && r.message) setMigratedMessage(r.message);
-      // Eenmalig: bestaand account "noa" hernoemen naar NoavHelvoirt (wachtwoord blijft)
-      if (runRenameNoaToNoavHelvoirt() && !r.migrated)
-        setMigratedMessage("Account is hernoemd naar NoavHelvoirt. Log in met je bestaande wachtwoord.");
-    });
-  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -45,10 +34,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       setError("Onjuiste gebruikersnaam of wachtwoord.");
       return;
     }
-    setCurrentUser(trimmed);
     onLogin();
-    await syncFromSupabase();
-    await pushLocalToSupabase();
     const next = basePath === "/web" ? "/web/dashboard" : "/boeken";
     navigate(withBase(basePath, next), { replace: true });
   }
@@ -59,11 +45,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       <p className="page-intro">
         Log in met je gebruikersnaam en wachtwoord.
       </p>
-      {migratedMessage && (
-        <div className="card migration-message">
-          <p>{migratedMessage}</p>
-        </div>
-      )}
       <form onSubmit={handleSubmit} className="card form-card">
         {error && <p className="form-error">{error}</p>}
         <label className="form-field">

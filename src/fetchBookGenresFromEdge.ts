@@ -1,26 +1,23 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-
 /**
- * Roept de Edge Function `goodreads-genres-nl` aan (Google Books → categories).
+ * Roept de Vercel API route /api/genres aan (vervangt de Supabase Edge Function).
  * Geeft een geschoonde, unieke lijst terug (volgorde behouden).
  */
 export async function fetchBookGenresFromEdge(
-  client: SupabaseClient,
   title: string,
   authors: string
 ): Promise<string[]> {
-  const { data, error } = await client.functions.invoke<{ genres?: unknown }>(
-    "goodreads-genres-nl",
-    {
-      method: "POST",
-      body: { title: title.trim(), authors: authors.trim() },
-    }
-  );
+  const res = await fetch("/api/genres", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: title.trim(), authors: authors.trim() }),
+  });
 
-  if (error) {
-    throw new Error(error.message || "Genres ophalen mislukt");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Genres ophalen mislukt" })) as { error?: string };
+    throw new Error(err.error ?? "Genres ophalen mislukt");
   }
 
+  const data = await res.json() as { genres?: unknown };
   const raw = data?.genres;
   if (!Array.isArray(raw) || raw.length === 0) {
     throw new Error("Geen categorieën in antwoord");

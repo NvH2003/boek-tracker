@@ -1,26 +1,20 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Book, Shelf } from "../types";
-import { loadBooks, loadShelves, saveShelves, subscribeBooks } from "../storage";
+import { Shelf } from "../types";
+import { useInstantData, saveShelves } from "../storage";
 import { useBasePath, withBase } from "../routing";
 
 type ShelfSortMode = "name" | "booksDesc" | "booksAsc";
 
 export function ShelvesPage() {
   const basePath = useBasePath();
-  const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
-  const [books, setBooks] = useState<Book[]>(() => loadBooks());
+  const { books, shelves } = useInstantData();
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [sortMode, setSortMode] = useState<ShelfSortMode>("name");
 
-  useEffect(() => {
-    return subscribeBooks(setBooks);
-  }, []);
-
   function persist(newShelves: Shelf[]) {
-    setShelves(newShelves);
     saveShelves(newShelves);
   }
 

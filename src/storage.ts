@@ -1,167 +1,277 @@
-import { getCurrentUsername, getCurrentUserId, getUserIdByUsername } from "./auth";
-import { supabase, isSupabaseConfigured } from "./supabase";
-import { Book, ReadStatus, ReadingChallenge, Shelf, SharedBookSnapshot, SharedItem } from "./types";
+/**
+ * storage.ts – datalaag op basis van InstantDB.
+ *
+ * Publieke API is zo veel mogelijk identiek gehouden aan de oude localStorage-versie,
+ * zodat pagina's minimaal hoeven te veranderen.
+ *
+ * Centrale hook: useInstantData() → levert { books, shelves, challenge, friends,
+ * friendRequests, sharedInbox, shelfViewSettings, genreFetchAllowlist, readingPace,
+ * profileId, isLoading }
+ */
 
-const BOOKS_KEY = "bt_books_v1";
-const SHELVES_KEY = "bt_shelves_v1";
-const CHALLENGE_KEY = "bt_challenge_v1";
-const FRIEND_REQUESTS_KEY = "bt_friend_requests_v1";
-const FRIENDS_KEY = "bt_friends_v1";
-const SHARED_INBOX_KEY = "bt_shared_inbox_v1";
-const SHELF_VIEW_SETTINGS_KEY = "bt_shelf_view_settings_v1";
-const GENRE_FETCH_ALLOWLIST_KEY = "bt_genre_fetch_allowlist_v1";
-const READING_PACE_KEY = "bt_reading_pace_v1";
+import { useCallback, useEffect, useMemo } from "react";
+import { id as instantId } from "@instantdb/react";
+import { db } from "./db";
+import { getCurrentUsername } from "./auth";
+import {
+  Book,
+  ReadStatus,
+  ReadingChallenge,
+  Shelf,
+  SharedBookSnapshot,
+  SharedItem,
+} from "./types";
 
-function booksKey(): string {
-  const u = getCurrentUsername();
-  return u ? `${BOOKS_KEY}_${u}` : BOOKS_KEY;
-}
-function booksKeyForUser(username: string): string {
-  return `${BOOKS_KEY}_${username}`;
-}
-function shelvesKey(): string {
-  const u = getCurrentUsername();
-  return u ? `${SHELVES_KEY}_${u}` : SHELVES_KEY;
-}
-function shelvesKeyForUser(username: string): string {
-  return `${SHELVES_KEY}_${username}`;
-}
-function challengeKey(): string {
-  const u = getCurrentUsername();
-  return u ? `${CHALLENGE_KEY}_${u}` : CHALLENGE_KEY;
-}
-function friendsKey(username: string): string {
-  return `${FRIENDS_KEY}_${username}`;
-}
-function sharedInboxKey(username: string): string {
-  return `${SHARED_INBOX_KEY}_${username}`;
-}
-function shelfViewSettingsKey(): string {
-  const u = getCurrentUsername();
-  return u ? `${SHELF_VIEW_SETTINGS_KEY}_${u}` : SHELF_VIEW_SETTINGS_KEY;
-}
-function genreFetchAllowlistKey(): string {
-  const u = getCurrentUsername();
-  return u ? `${GENRE_FETCH_ALLOWLIST_KEY}_${u}` : GENRE_FETCH_ALLOWLIST_KEY;
-}
-/** Alle localStorage-keys waar leestempo voor dit account kan staan (uid + username, zodat laden altijd lukt). */
-function collectReadingPaceStorageKeys(): string[] {
-  const keys: string[] = [];
-  const uid = getCurrentUserId();
-  const u = getCurrentUsername();
-  if (uid) keys.push(`${READING_PACE_KEY}_uid_${uid}`);
-  if (u) keys.push(`${READING_PACE_KEY}_${u}`);
-  if (keys.length === 0) keys.push(READING_PACE_KEY);
-  return keys;
-}
+// ─── Constanten voor client-side localStorage-migratie ───────────────────────
 
-function parsePaceRaw(raw: string | null): number | null {
-  if (raw == null || raw === "") return null;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return n;
-}
+const LS_BOOKS_KEY = "bt_books_v1";
+const LS_SHELVES_KEY = "bt_shelves_v1";
+const LS_CHALLENGE_KEY = "bt_challenge_v1";
+const LS_FRIENDS_KEY = "bt_friends_v1";
+const LS_SHARED_INBOX_KEY = "bt_shared_inbox_v1";
+const LS_FRIEND_REQUESTS_KEY = "bt_friend_requests_v1";
+const LS_SHELF_VIEW_SETTINGS_KEY = "bt_shelf_view_settings_v1";
+const LS_GENRE_FETCH_ALLOWLIST_KEY = "bt_genre_fetch_allowlist_v1";
+const LS_READING_PACE_KEY = "bt_reading_pace_v1";
+const LS_MIGRATED_FLAG = "bt_migrated_to_instant";
 
-/** Bladzijden per uur voor leessessie-timer; null = niet ingesteld. */
-export function loadReadingPace(): number | null {
+const DEFAULT_SHELVES: Shelf[] = [
+  { id: "wil-ik-lezen", name: "Wil ik lezen", system: true },
+  { id: "aan-het-lezen", name: "Aan het lezen", system: true },
+  { id: "gelezen", name: "Gelezen", system: true },
+];
+
+// ─── Helper: lees uit localStorage ───────────────────────────────────────────
+
+function lsGet<T>(key: string, fallback: T): T {
   try {
-    const tryKey = (key: string): number | null =>
-      parsePaceRaw(window.localStorage.getItem(key));
-
-    const uid = getCurrentUserId();
-    if (uid) {
-      const v = tryKey(`${READING_PACE_KEY}_uid_${uid}`);
-      if (v != null) return v;
-    }
-    const u = getCurrentUsername();
-    if (u) {
-      const v = tryKey(`${READING_PACE_KEY}_${u}`);
-      if (v != null) return v;
-    }
-    return tryKey(READING_PACE_KEY);
+    const raw = window.localStorage.getItem(key);
+    if (raw == null) return fallback;
+    return JSON.parse(raw) as T;
   } catch {
-    return null;
+    return fallback;
   }
 }
 
-function writeReadingPaceLocalAllKeys(rounded: number | null): void {
-  const keys = collectReadingPaceStorageKeys();
-  if (rounded == null || !Number.isFinite(rounded) || rounded <= 0) {
-    keys.forEach((k) => window.localStorage.removeItem(k));
-  } else {
-    const s = String(Math.round(rounded));
-    keys.forEach((k) => window.localStorage.setItem(k, s));
-  }
-}
+// ─── ShelfViewSettings type ───────────────────────────────────────────────────
 
-export function saveReadingPace(pagesPerHour: number): void {
-  const rounded =
-    Number.isFinite(pagesPerHour) && pagesPerHour > 0 ? Math.round(pagesPerHour) : null;
-  writeReadingPaceLocalAllKeys(rounded);
-
-  if (!isSupabaseConfigured() || !supabase) return;
-  const userId = getCurrentUserId();
-  if (!userId) return;
-  if (rounded == null) {
-    supabase.from("user_data").delete().eq("user_id", userId).eq("key", "reading_pace").then(() => {});
-    return;
-  }
-  supabase
-    .from("user_data")
-    .upsert({ user_id: userId, key: "reading_pace", value: rounded }, { onConflict: "user_id,key" })
-    .then(() => {});
-}
-
-/** Sortering en groepering per boekenkast, gekoppeld aan account. */
 export interface ShelfViewSettings {
   sortRulesByShelf: Record<string, string[]>;
   groupModeByShelf: Record<string, string>;
   groupSortRules: Record<string, string[]>;
 }
 
-export function loadShelfViewSettings(): ShelfViewSettings {
-  try {
-    const raw = window.localStorage.getItem(shelfViewSettingsKey());
-    if (!raw) return { sortRulesByShelf: {}, groupModeByShelf: {}, groupSortRules: {} };
-    const parsed = JSON.parse(raw) as ShelfViewSettings;
-    return {
-      sortRulesByShelf: parsed.sortRulesByShelf ?? {},
-      groupModeByShelf: parsed.groupModeByShelf ?? {},
-      groupSortRules: parsed.groupSortRules ?? {}
-    };
-  } catch {
-    return { sortRulesByShelf: {}, groupModeByShelf: {}, groupSortRules: {} };
-  }
+const DEFAULT_SHELF_VIEW_SETTINGS: ShelfViewSettings = {
+  sortRulesByShelf: {},
+  groupModeByShelf: {},
+  groupSortRules: {},
+};
+
+// ─── FriendRequest type ───────────────────────────────────────────────────────
+
+export interface FriendRequest {
+  id?: string;
+  from: string;
+  to: string;
+  status: "pending" | "accepted" | "rejected";
 }
 
-export function saveShelfViewSettings(settings: ShelfViewSettings): void {
-  window.localStorage.setItem(shelfViewSettingsKey(), JSON.stringify(settings));
-  if (!isSupabaseConfigured() || !supabase) return;
-  const userId = getCurrentUserId();
-  if (!userId) return;
-  supabase
-    .from("user_data")
-    .upsert({ user_id: userId, key: "shelf_view_settings", value: settings }, { onConflict: "user_id,key" })
-    .then(() => {});
+// ─── Centrale hook ────────────────────────────────────────────────────────────
+
+/** Alle data voor de ingelogde gebruiker, real-time gesynchroniseerd via InstantDB. */
+export function useInstantData() {
+  const username = getCurrentUsername();
+
+  // Query: profiel van de ingelogde gebruiker (op username)
+  const { data: profileData, isLoading: profileLoading } = db.useQuery(
+    username
+      ? {
+          profiles: {
+            $: { where: { username } },
+          },
+        }
+      : null
+  );
+
+  // Query: alle vriendschapsverzoeken waarbij de gebruiker betrokken is
+  const { data: frData, isLoading: frLoading } = db.useQuery(
+    username
+      ? {
+          friendRequests: {
+            $: {
+              where: {
+                or: [{ fromUsername: username }, { toUsername: username }],
+              },
+            },
+          },
+        }
+      : null
+  );
+
+  // Query: inbox items gericht aan de gebruiker
+  const { data: inboxData, isLoading: inboxLoading } = db.useQuery(
+    username
+      ? {
+          sharedInboxItems: {
+            $: { where: { toUsername: username } },
+          },
+        }
+      : null
+  );
+
+  const rawProfile = profileData?.profiles?.[0] as
+    | {
+        id: string;
+        username: string;
+        books?: unknown;
+        shelves?: unknown;
+        challenge?: unknown;
+        friends?: unknown;
+        shelfViewSettings?: unknown;
+        genreFetchAllowlist?: unknown;
+        readingPace?: number;
+      }
+    | undefined;
+
+  const profileId = rawProfile?.id ?? null;
+
+  const books = useMemo(
+    () => (Array.isArray(rawProfile?.books) ? (rawProfile!.books as Book[]) : []),
+    [rawProfile?.books]
+  );
+  const shelves = useMemo(
+    () =>
+      Array.isArray(rawProfile?.shelves) && (rawProfile!.shelves as Shelf[]).length > 0
+        ? (rawProfile!.shelves as Shelf[])
+        : DEFAULT_SHELVES,
+    [rawProfile?.shelves]
+  );
+  const challenge = useMemo(
+    () => (rawProfile?.challenge != null ? (rawProfile!.challenge as ReadingChallenge) : null),
+    [rawProfile?.challenge]
+  );
+  const friends = useMemo(
+    () => (Array.isArray(rawProfile?.friends) ? (rawProfile!.friends as string[]) : []),
+    [rawProfile?.friends]
+  );
+  const shelfViewSettings = useMemo(
+    () =>
+      rawProfile?.shelfViewSettings != null
+        ? (rawProfile!.shelfViewSettings as ShelfViewSettings)
+        : DEFAULT_SHELF_VIEW_SETTINGS,
+    [rawProfile?.shelfViewSettings]
+  );
+  const genreFetchAllowlist = useMemo(
+    () =>
+      Array.isArray(rawProfile?.genreFetchAllowlist)
+        ? (rawProfile!.genreFetchAllowlist as string[])
+        : [],
+    [rawProfile?.genreFetchAllowlist]
+  );
+  const readingPace = rawProfile?.readingPace ?? null;
+
+  const rawFriendRequests = useMemo(
+    () =>
+      (frData?.friendRequests ?? []) as Array<{
+        id: string;
+        fromUsername: string;
+        toUsername: string;
+        status: string;
+      }>,
+    [frData?.friendRequests]
+  );
+
+  const friendRequests = useMemo(
+    () =>
+      rawFriendRequests.map(
+        (r): FriendRequest => ({
+          id: r.id,
+          from: r.fromUsername,
+          to: r.toUsername,
+          status: r.status as "pending" | "accepted" | "rejected",
+        })
+      ),
+    [rawFriendRequests]
+  );
+
+  const rawInboxItems = useMemo(
+    () =>
+      (inboxData?.sharedInboxItems ?? []) as Array<{
+        id: string;
+        fromUsername: string;
+        books: unknown;
+        shelfName?: string;
+        sharedAt: string;
+      }>,
+    [inboxData?.sharedInboxItems]
+  );
+
+  const sharedInbox = useMemo(
+    () =>
+      rawInboxItems.map(
+        (item): SharedItem & { _idbId: string } => ({
+          _idbId: item.id,
+          from: item.fromUsername,
+          books: Array.isArray(item.books) ? (item.books as SharedBookSnapshot[]) : [],
+          shelfName: item.shelfName,
+          sharedAt: item.sharedAt,
+        })
+      ),
+    [rawInboxItems]
+  );
+
+  const isLoading = profileLoading || frLoading || inboxLoading;
+
+  return {
+    profileId,
+    books,
+    shelves,
+    challenge,
+    friends,
+    friendRequests,
+    sharedInbox,
+    shelfViewSettings,
+    genreFetchAllowlist,
+    readingPace,
+    isLoading,
+  };
 }
 
-/**
- * Genres die je toestaat bij automatisch ophalen / “Genres ophalen”.
- * Lege lijst = alle API-suggesties (standaard).
- */
-export function loadGenreFetchAllowlist(): string[] {
-  try {
-    const raw = window.localStorage.getItem(genreFetchAllowlistKey());
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map((x) => String(x).trim()).filter(Boolean);
-  } catch {
-    return [];
-  }
+// ─── Write-functies (db.transact) ─────────────────────────────────────────────
+
+async function getProfileId(): Promise<string | null> {
+  const username = getCurrentUsername();
+  if (!username) return null;
+  const result = await db.queryOnce({ profiles: { $: { where: { username } } } });
+  return (result.data?.profiles?.[0] as { id?: string } | undefined)?.id ?? null;
 }
 
-export function saveGenreFetchAllowlist(items: string[]): void {
+export async function saveBooks(books: Book[]): Promise<void> {
+  const pid = await getProfileId();
+  if (!pid) return;
+  await db.transact([db.tx.profiles[pid].update({ books })]);
+  window.dispatchEvent(new Event("bt_books_updated_v1"));
+}
+
+export async function saveShelves(shelves: Shelf[]): Promise<void> {
+  const pid = await getProfileId();
+  if (!pid) return;
+  await db.transact([db.tx.profiles[pid].update({ shelves })]);
+}
+
+export async function saveChallenge(challenge: ReadingChallenge | null): Promise<void> {
+  const pid = await getProfileId();
+  if (!pid) return;
+  await db.transact([db.tx.profiles[pid].update({ challenge: challenge ?? null })]);
+}
+
+export async function saveShelfViewSettings(settings: ShelfViewSettings): Promise<void> {
+  const pid = await getProfileId();
+  if (!pid) return;
+  await db.transact([db.tx.profiles[pid].update({ shelfViewSettings: settings })]);
+}
+
+export async function saveGenreFetchAllowlist(items: string[]): Promise<void> {
   const seen = new Set<string>();
   const cleaned: string[] = [];
   for (const s of items) {
@@ -172,589 +282,252 @@ export function saveGenreFetchAllowlist(items: string[]): void {
     seen.add(k);
     cleaned.push(t);
   }
-  window.localStorage.setItem(genreFetchAllowlistKey(), JSON.stringify(cleaned));
-  if (!isSupabaseConfigured() || !supabase) return;
-  const userId = getCurrentUserId();
-  if (!userId) return;
-  supabase
-    .from("user_data")
-    .upsert({ user_id: userId, key: "genre_fetch_allowlist", value: cleaned }, { onConflict: "user_id,key" })
-    .then(() => {});
+  const pid = await getProfileId();
+  if (!pid) return;
+  await db.transact([db.tx.profiles[pid].update({ genreFetchAllowlist: cleaned })]);
 }
 
-/** Sync alle data van Supabase naar localStorage (na login / session restore). */
-export async function syncFromSupabase(): Promise<void> {
-  if (!isSupabaseConfigured() || !supabase) return;
-  const userId = getCurrentUserId();
-  const username = getCurrentUsername();
-  if (!userId || !username) return;
-
-  const keys = ["books", "shelves", "challenge", "friends"] as const;
-  const { data: rows } = await supabase.from("user_data").select("key, value").eq("user_id", userId);
-  if (rows) {
-    const byKey: Record<string, unknown> = {};
-    for (const r of rows) byKey[r.key] = r.value;
-    if (byKey.books != null) window.localStorage.setItem(booksKey(), JSON.stringify(byKey.books));
-    if (byKey.shelves != null) window.localStorage.setItem(shelvesKey(), JSON.stringify(byKey.shelves));
-    if (byKey.challenge != null) window.localStorage.setItem(challengeKey(), JSON.stringify(byKey.challenge));
-    if (byKey.friends != null) window.localStorage.setItem(friendsKey(username), JSON.stringify(byKey.friends));
-    if (byKey.shelf_view_settings != null) {
-      const settings = byKey.shelf_view_settings as ShelfViewSettings;
-      window.localStorage.setItem(shelfViewSettingsKey(), JSON.stringify({
-        sortRulesByShelf: settings.sortRulesByShelf ?? {},
-        groupModeByShelf: settings.groupModeByShelf ?? {},
-        groupSortRules: settings.groupSortRules ?? {}
-      }));
-    }
-    if (byKey.genre_fetch_allowlist != null && Array.isArray(byKey.genre_fetch_allowlist)) {
-      const list = (byKey.genre_fetch_allowlist as unknown[]).map((x) => String(x).trim()).filter(Boolean);
-      window.localStorage.setItem(genreFetchAllowlistKey(), JSON.stringify(list));
-    }
-    if (byKey.reading_pace != null) {
-      const p = Number(byKey.reading_pace);
-      if (Number.isFinite(p) && p > 0) {
-        writeReadingPaceLocalAllKeys(Math.round(p));
-      }
-    }
-  }
-
-  const { data: reqRows } = await supabase.from("friend_requests").select("from_username, to_username, status");
-  if (reqRows?.length) {
-    const requests: FriendRequest[] = reqRows.map((r: { from_username: string; to_username: string; status: string }) => ({
-      from: r.from_username,
-      to: r.to_username,
-      status: r.status as "pending" | "accepted" | "rejected"
-    }));
-    window.localStorage.setItem(FRIEND_REQUESTS_KEY, JSON.stringify(requests));
-  }
-
-  const { data: inboxRow } = await supabase.from("shared_inbox").select("items").eq("user_id", userId).maybeSingle();
-  if (inboxRow?.items != null) {
-    window.localStorage.setItem(sharedInboxKey(username), JSON.stringify(inboxRow.items));
-    // Signaleer aan de UI dat de gedeelde inbox is bijgewerkt (voor bv. rood bolletje in de profiel-tab)
-    window.dispatchEvent(new Event("bt_shared_inbox_updated"));
-  }
-}
-
-/** Upload huidige localStorage naar Supabase (na login). Zo komen bestaande boeken op pc ook in de cloud voor je telefoon. */
-export async function pushLocalToSupabase(): Promise<void> {
-  if (!isSupabaseConfigured() || !supabase) return;
-  const userId = getCurrentUserId();
-  const username = getCurrentUsername();
-  if (!userId || !username) return;
-
-  const books = loadBooks();
-  const shelves = loadShelves();
-  const challenge = loadChallenge();
-  const friends = loadFriends();
-  const inbox = loadSharedInbox();
-  const shelfViewSettings = loadShelfViewSettings();
-  const genreFetchAllowlist = loadGenreFetchAllowlist();
-  const readingPace = loadReadingPace();
-
-  await Promise.all([
-    supabase.from("user_data").upsert({ user_id: userId, key: "books", value: books }, { onConflict: "user_id,key" }),
-    supabase.from("user_data").upsert({ user_id: userId, key: "shelves", value: shelves }, { onConflict: "user_id,key" }),
-    challenge
-      ? supabase.from("user_data").upsert({ user_id: userId, key: "challenge", value: challenge }, { onConflict: "user_id,key" })
-      : Promise.resolve(),
-    supabase.from("user_data").upsert({ user_id: userId, key: "friends", value: friends }, { onConflict: "user_id,key" }),
-    supabase.from("user_data").upsert({ user_id: userId, key: "shelf_view_settings", value: shelfViewSettings }, { onConflict: "user_id,key" }),
-    supabase
-      .from("user_data")
-      .upsert({ user_id: userId, key: "genre_fetch_allowlist", value: genreFetchAllowlist }, { onConflict: "user_id,key" }),
-    readingPace != null
-      ? supabase
-          .from("user_data")
-          .upsert({ user_id: userId, key: "reading_pace", value: readingPace }, { onConflict: "user_id,key" })
-      : Promise.resolve(),
-    supabase.from("shared_inbox").upsert({ user_id: userId, items: inbox }, { onConflict: "user_id" })
-  ]);
-}
-
-async function refreshFriendRequestsFromSupabase(): Promise<void> {
-  if (!isSupabaseConfigured() || !supabase) return;
-  const { data: rows } = await supabase.from("friend_requests").select("from_username, to_username, status");
-  if (!rows?.length) {
-    window.localStorage.setItem(FRIEND_REQUESTS_KEY, "[]");
-    return;
-  }
-  const requests: FriendRequest[] = rows.map((r: { from_username: string; to_username: string; status: string }) => ({
-    from: r.from_username,
-    to: r.to_username,
-    status: r.status as "pending" | "accepted" | "rejected"
-  }));
-  window.localStorage.setItem(FRIEND_REQUESTS_KEY, JSON.stringify(requests));
-}
-
-export interface FriendRequest {
-  from: string;
-  to: string;
-  status: "pending" | "accepted" | "rejected";
-}
-
-const BOOKS_UPDATED_EVENT = "bt_books_updated_v1";
-const BOOKS_CHANNEL = "bt_books_channel_v1";
-
-let booksChannel: BroadcastChannel | null = null;
-
-function getBooksChannel(): BroadcastChannel | null {
-  try {
-    if (typeof BroadcastChannel === "undefined") return null;
-    if (!booksChannel) {
-      booksChannel = new BroadcastChannel(BOOKS_CHANNEL);
-    }
-    return booksChannel;
-  } catch {
-    return null;
-  }
-}
-
-function notifyBooksUpdated() {
-  // Same-tab listeners
-  window.dispatchEvent(new Event(BOOKS_UPDATED_EVENT));
-  // Cross-tab listeners
-  const bc = getBooksChannel();
-  bc?.postMessage({ type: "books_updated" });
-}
-
-export function loadBooks(): Book[] {
-  const raw = window.localStorage.getItem(booksKey());
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as Book[];
-  } catch {
-    return [];
-  }
-}
-
-export function saveBooks(books: Book[]) {
-  window.localStorage.setItem(booksKey(), JSON.stringify(books));
-  notifyBooksUpdated();
-  const userId = getCurrentUserId();
-  if (isSupabaseConfigured() && supabase && userId) {
-    supabase.from("user_data").upsert({ user_id: userId, key: "books", value: books }, { onConflict: "user_id,key" }).then(() => {});
-  }
-}
-
-export function subscribeBooks(onBooks: (books: Book[]) => void): () => void {
-  function emit() {
-    onBooks(loadBooks());
-  }
-
-  function onStorage(e: StorageEvent) {
-    if (e.key === booksKey()) {
-      emit();
-    }
-  }
-
-  function onLocalEvent() {
-    emit();
-  }
-
-  const bc = getBooksChannel();
-  const onMessage =
-    bc
-      ? (event: MessageEvent) => {
-          if (event.data?.type === "books_updated") {
-            emit();
-          }
-        }
-      : null;
-
-  window.addEventListener("storage", onStorage);
-  window.addEventListener(BOOKS_UPDATED_EVENT, onLocalEvent);
-  if (bc && onMessage) {
-    bc.addEventListener("message", onMessage);
-  }
-
-  return () => {
-    window.removeEventListener("storage", onStorage);
-    window.removeEventListener(BOOKS_UPDATED_EVENT, onLocalEvent);
-    if (bc && onMessage) {
-      bc.removeEventListener("message", onMessage);
-    }
-  };
-}
-
-export function loadShelves(): Shelf[] {
-  const raw = window.localStorage.getItem(shelvesKey());
-  if (!raw) {
-    const defaults: Shelf[] = [
-      { id: "wil-ik-lezen", name: "Wil ik lezen", system: true },
-      { id: "aan-het-lezen", name: "Aan het lezen", system: true },
-      { id: "gelezen", name: "Gelezen", system: true }
-    ];
-    return defaults;
-  }
-  try {
-    return JSON.parse(raw) as Shelf[];
-  } catch {
-    return [];
-  }
-}
-
-export function saveShelves(shelves: Shelf[]) {
-  window.localStorage.setItem(shelvesKey(), JSON.stringify(shelves));
-  const userId = getCurrentUserId();
-  if (isSupabaseConfigured() && supabase && userId) {
-    supabase.from("user_data").upsert({ user_id: userId, key: "shelves", value: shelves }, { onConflict: "user_id,key" }).then(() => {});
-  }
-}
-
-export function loadChallenge(): ReadingChallenge | null {
-  const raw = window.localStorage.getItem(challengeKey());
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as ReadingChallenge;
-  } catch {
-    return null;
-  }
-}
-
-export function saveChallenge(challenge: ReadingChallenge | null) {
-  if (!challenge) {
-    window.localStorage.removeItem(challengeKey());
+export async function saveReadingPace(pagesPerHour: number): Promise<void> {
+  const rounded =
+    Number.isFinite(pagesPerHour) && pagesPerHour > 0 ? Math.round(pagesPerHour) : null;
+  const pid = await getProfileId();
+  if (!pid) return;
+  if (rounded != null) {
+    await db.transact([db.tx.profiles[pid].update({ readingPace: rounded })]);
   } else {
-    window.localStorage.setItem(challengeKey(), JSON.stringify(challenge));
-  }
-  const userId = getCurrentUserId();
-  if (isSupabaseConfigured() && supabase && userId) {
-    if (challenge) {
-      supabase.from("user_data").upsert({ user_id: userId, key: "challenge", value: challenge }, { onConflict: "user_id,key" }).then(() => {});
-    } else {
-      supabase.from("user_data").delete().eq("user_id", userId).eq("key", "challenge").then(() => {});
-    }
+    await db.transact([db.tx.profiles[pid].update({ readingPace: undefined })]);
   }
 }
 
-/** Vriendschapsverzoeken (globaal: van/naar alle gebruikers). */
-export function loadFriendRequests(): FriendRequest[] {
-  const raw = window.localStorage.getItem(FRIEND_REQUESTS_KEY);
-  if (!raw) return [];
-  try {
-    const arr = JSON.parse(raw) as unknown;
-    if (!Array.isArray(arr)) return [];
-    return arr.filter(
-      (x): x is FriendRequest =>
-        x != null &&
-        typeof (x as FriendRequest).from === "string" &&
-        typeof (x as FriendRequest).to === "string" &&
-        ((x as FriendRequest).status === "pending" || (x as FriendRequest).status === "accepted" || (x as FriendRequest).status === "rejected")
-    );
-  } catch {
-    return [];
-  }
+async function saveFriends(username: string, usernames: string[]): Promise<void> {
+  const result = await db.queryOnce({ profiles: { $: { where: { username } } } });
+  const pid = (result.data?.profiles?.[0] as { id?: string } | undefined)?.id;
+  if (!pid) return;
+  await db.transact([db.tx.profiles[pid].update({ friends: usernames })]);
 }
 
-function saveFriendRequests(requests: FriendRequest[]) {
-  window.localStorage.setItem(FRIEND_REQUESTS_KEY, JSON.stringify(requests));
-}
+// ─── Vriendschapsverzoeken ────────────────────────────────────────────────────
 
-/** Vrienden van de huidige gebruiker (wederzijds geaccepteerd). */
-export function loadFriends(): string[] {
-  const current = getCurrentUsername();
-  if (!current) return [];
-  const raw = window.localStorage.getItem(friendsKey(current));
-  if (!raw) return [];
-  try {
-    const arr = JSON.parse(raw) as unknown;
-    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveFriends(username: string, usernames: string[]) {
-  window.localStorage.setItem(friendsKey(username), JSON.stringify(usernames));
-  const client = supabase;
-  if (isSupabaseConfigured() && client) {
-    getUserIdByUsername(username).then((uid) => {
-      if (uid && client) client.from("user_data").upsert({ user_id: uid, key: "friends", value: usernames }, { onConflict: "user_id,key" }).then(() => {});
-    });
-  }
-}
-
-/** Inkomende verzoeken (anderen die mij hebben gevraagd). */
-export function getPendingReceivedRequests(): string[] {
-  const me = getCurrentUsername();
-  if (!me) return [];
-  return loadFriendRequests()
+export function getPendingReceivedRequests(
+  friendRequests: FriendRequest[],
+  me: string
+): string[] {
+  return friendRequests
     .filter((r) => r.to.toLowerCase() === me.toLowerCase() && r.status === "pending")
     .map((r) => r.from);
 }
 
-/** Uitgaande verzoeken (ik heb hen gevraagd). */
-export function getPendingSentRequests(): string[] {
-  const me = getCurrentUsername();
-  if (!me) return [];
-  return loadFriendRequests()
+export function getPendingSentRequests(
+  friendRequests: FriendRequest[],
+  me: string
+): string[] {
+  return friendRequests
     .filter((r) => r.from.toLowerCase() === me.toLowerCase() && r.status === "pending")
     .map((r) => r.to);
 }
 
-export function sendFriendRequest(toUsername: string): { ok: true } | { ok: false; error: string } {
+export async function sendFriendRequest(
+  toUsername: string,
+  friends: string[],
+  friendRequests: FriendRequest[]
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const me = getCurrentUsername();
   if (!me) return { ok: false, error: "Niet ingelogd." };
   const to = toUsername.trim();
   if (!to) return { ok: false, error: "Vul een gebruikersnaam in." };
-  if (to.toLowerCase() === me.toLowerCase()) return { ok: false, error: "Je kunt jezelf geen verzoek sturen." };
-  const friends = loadFriends();
-  if (friends.some((u) => u.toLowerCase() === to.toLowerCase())) return { ok: false, error: "Je bent al Boekbuddies." };
-  const requests = loadFriendRequests();
-  const exists = requests.some(
+  if (to.toLowerCase() === me.toLowerCase())
+    return { ok: false, error: "Je kunt jezelf geen verzoek sturen." };
+  if (friends.some((u) => u.toLowerCase() === to.toLowerCase()))
+    return { ok: false, error: "Je bent al Boekbuddies." };
+  const exists = friendRequests.some(
     (r) =>
       r.status === "pending" &&
       ((r.from.toLowerCase() === me.toLowerCase() && r.to.toLowerCase() === to.toLowerCase()) ||
         (r.from.toLowerCase() === to.toLowerCase() && r.to.toLowerCase() === me.toLowerCase()))
   );
   if (exists) return { ok: false, error: "Er staat al een verzoek open." };
-  saveFriendRequests([...requests, { from: me, to, status: "pending" }]);
-  if (isSupabaseConfigured() && supabase) {
-    supabase.from("friend_requests").insert({ from_username: me, to_username: to, status: "pending" }).then(() => refreshFriendRequestsFromSupabase());
-  }
+
+  // Controleer of de ontvanger bestaat
+  const check = await db.queryOnce({ profiles: { $: { where: { username: to } } } });
+  const exists2 = (check.data?.profiles ?? []).length > 0;
+  if (!exists2) return { ok: false, error: "Gebruiker niet gevonden." };
+
+  const frId = instantId();
+  await db.transact([
+    db.tx.friendRequests[frId].update({
+      fromUsername: me,
+      toUsername: to,
+      status: "pending",
+    }),
+  ]);
   return { ok: true };
 }
 
-export function acceptFriendRequest(fromUsername: string): void {
+export async function acceptFriendRequest(
+  fromUsername: string,
+  friendRequests: FriendRequest[],
+  myFriends: string[]
+): Promise<void> {
   const me = getCurrentUsername();
   if (!me) return;
   const from = fromUsername.trim().toLowerCase();
-  const requests = loadFriendRequests();
-  const idx = requests.findIndex(
+  const req = friendRequests.find(
     (r) => r.from.toLowerCase() === from && r.to.toLowerCase() === me.toLowerCase() && r.status === "pending"
   );
-  if (idx === -1) return;
-  const updated = requests.slice();
-  updated[idx] = { ...updated[idx], status: "accepted" };
-  saveFriendRequests(updated);
-  const otherUsername = requests[idx].from;
-  const myFriends = loadFriends();
+  if (!req?.id) return;
+
+  const otherUsername = req.from;
+
+  // Update status
+  await db.transact([
+    db.tx.friendRequests[req.id].update({ status: "accepted" }),
+  ]);
+
+  // Voeg toe aan eigen vriendenlijst
   if (!myFriends.some((u) => u.toLowerCase() === otherUsername.toLowerCase())) {
-    saveFriends(me, [...myFriends, otherUsername]);
+    await saveFriends(me, [...myFriends, otherUsername]);
   }
-  const theirKey = friendsKey(otherUsername);
-  const theirRaw = window.localStorage.getItem(theirKey);
-  const theirFriends = theirRaw ? (JSON.parse(theirRaw) as string[]) : [];
-  if (!theirFriends.some((u) => u.toLowerCase() === me.toLowerCase())) {
-    window.localStorage.setItem(theirKey, JSON.stringify([...theirFriends, me]));
-  }
-  if (isSupabaseConfigured() && supabase) {
-    supabase
-      .from("friend_requests")
-      .update({ status: "accepted" })
-      .eq("from_username", otherUsername)
-      .eq("to_username", me)
-      .then(() => refreshFriendRequestsFromSupabase());
+
+  // Voeg toe aan hun vriendenlijst
+  const theirResult = await db.queryOnce({
+    profiles: { $: { where: { username: otherUsername } } },
+  });
+  const theirProfile = theirResult.data?.profiles?.[0] as
+    | { id: string; friends?: unknown }
+    | undefined;
+  if (theirProfile) {
+    const theirFriends = Array.isArray(theirProfile.friends)
+      ? (theirProfile.friends as string[])
+      : [];
+    if (!theirFriends.some((u) => u.toLowerCase() === me.toLowerCase())) {
+      await db.transact([
+        db.tx.profiles[theirProfile.id].update({ friends: [...theirFriends, me] }),
+      ]);
+    }
   }
 }
 
-export function rejectFriendRequest(fromUsername: string): void {
+export async function rejectFriendRequest(
+  fromUsername: string,
+  friendRequests: FriendRequest[]
+): Promise<void> {
   const me = getCurrentUsername();
   if (!me) return;
   const from = fromUsername.trim().toLowerCase();
-  const requests = loadFriendRequests();
-  const idx = requests.findIndex(
+  const req = friendRequests.find(
     (r) => r.from.toLowerCase() === from && r.to.toLowerCase() === me.toLowerCase() && r.status === "pending"
   );
-  if (idx === -1) return;
-  const updated = requests.filter((_, i) => i !== idx);
-  saveFriendRequests(updated);
-  if (isSupabaseConfigured() && supabase) {
-    supabase
-      .from("friend_requests")
-      .delete()
-      .eq("from_username", from)
-      .eq("to_username", me)
-      .then(() => refreshFriendRequestsFromSupabase());
-  }
+  if (!req?.id) return;
+  await db.transact([db.tx.friendRequests[req.id].delete()]);
 }
 
-export function removeFriend(username: string): void {
+export async function removeFriend(
+  username: string,
+  myFriends: string[]
+): Promise<void> {
   const me = getCurrentUsername();
   if (!me) return;
-  const list = loadFriends().filter((u) => u.toLowerCase() !== username.toLowerCase());
-  saveFriends(me, list);
-  const theirKey = friendsKey(username);
-  const theirRaw = window.localStorage.getItem(theirKey);
-  if (theirRaw) {
-    const theirList = (JSON.parse(theirRaw) as string[]).filter((u) => u.toLowerCase() !== me.toLowerCase());
-    window.localStorage.setItem(theirKey, JSON.stringify(theirList));
+  const updated = myFriends.filter((u) => u.toLowerCase() !== username.toLowerCase());
+  await saveFriends(me, updated);
+
+  // Verwijder ook uit hun vriendenlijst
+  const theirResult = await db.queryOnce({
+    profiles: { $: { where: { username } },
+    },
+  });
+  const theirProfile = theirResult.data?.profiles?.[0] as
+    | { id: string; friends?: unknown }
+    | undefined;
+  if (theirProfile) {
+    const theirFriends = Array.isArray(theirProfile.friends)
+      ? (theirProfile.friends as string[])
+      : [];
+    const theirUpdated = theirFriends.filter((u) => u.toLowerCase() !== me.toLowerCase());
+    await db.transact([
+      db.tx.profiles[theirProfile.id].update({ friends: theirUpdated }),
+    ]);
   }
 }
 
-const DEFAULT_SHELVES: Shelf[] = [
-  { id: "wil-ik-lezen", name: "Wil ik lezen", system: true },
-  { id: "aan-het-lezen", name: "Aan het lezen", system: true },
-  { id: "gelezen", name: "Gelezen", system: true }
-];
+// ─── Gedeelde inbox ───────────────────────────────────────────────────────────
 
-/** Boeken van een andere gebruiker (voor read-only weergave, bv. Boekbuddy). */
-export function loadBooksForUser(username: string): Book[] {
-  const raw = window.localStorage.getItem(booksKeyForUser(username));
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as Book[];
-  } catch {
-    return [];
-  }
-}
-
-/** Boeken van een andere gebruiker ophalen (lokaal of uit Supabase). Voor Boekbuddy-pagina. */
-export async function loadBooksForUserAsync(username: string): Promise<Book[]> {
-  if (isSupabaseConfigured() && supabase) {
-    const uid = await getUserIdByUsername(username);
-    if (uid) {
-      const { data } = await supabase.from("user_data").select("value").eq("user_id", uid).eq("key", "books").maybeSingle();
-      if (data?.value != null && Array.isArray(data.value)) {
-        const books = data.value as Book[];
-        window.localStorage.setItem(booksKeyForUser(username), JSON.stringify(books));
-        return books;
-      }
-    }
-  }
-  return loadBooksForUser(username);
-}
-
-/** Planken van een andere gebruiker (voor weergave). */
-export function loadShelvesForUser(username: string): Shelf[] {
-  const raw = window.localStorage.getItem(shelvesKeyForUser(username));
-  if (!raw) return DEFAULT_SHELVES;
-  try {
-    return JSON.parse(raw) as Shelf[];
-  } catch {
-    return DEFAULT_SHELVES;
-  }
-}
-
-/** Planken van een andere gebruiker ophalen (lokaal of uit Supabase). */
-export async function loadShelvesForUserAsync(username: string): Promise<Shelf[]> {
-  if (isSupabaseConfigured() && supabase) {
-    const uid = await getUserIdByUsername(username);
-    if (uid) {
-      const { data } = await supabase.from("user_data").select("value").eq("user_id", uid).eq("key", "shelves").maybeSingle();
-      if (data?.value != null && Array.isArray(data.value)) {
-        const shelves = data.value as Shelf[];
-        window.localStorage.setItem(shelvesKeyForUser(username), JSON.stringify(shelves));
-        return shelves;
-      }
-    }
-  }
-  return loadShelvesForUser(username);
-}
-
-/** Inbox met door Boekbuddies gedeelde boeken/planken. */
-export function loadSharedInbox(): SharedItem[] {
-  const me = getCurrentUsername();
-  if (!me) return [];
-  const raw = window.localStorage.getItem(sharedInboxKey(me));
-  if (!raw) return [];
-  try {
-    const arr = JSON.parse(raw) as unknown;
-    return Array.isArray(arr) ? (arr as SharedItem[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveSharedInbox(username: string, items: SharedItem[]) {
-  window.localStorage.setItem(sharedInboxKey(username), JSON.stringify(items));
-  // Signaleer aan de UI dat de gedeelde inbox is bijgewerkt (voor bv. rood bolletje in de profiel-tab)
-  window.dispatchEvent(new Event("bt_shared_inbox_updated"));
-  const client = supabase;
-  if (isSupabaseConfigured() && client) {
-    getUserIdByUsername(username).then((uid) => {
-      if (uid && client) client.from("shared_inbox").upsert({ user_id: uid, items }, { onConflict: "user_id" }).then(() => {});
-    });
-  }
-}
-
-function loadSharedInboxForUser(username: string): SharedItem[] {
-  const raw = window.localStorage.getItem(sharedInboxKey(username));
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw) as SharedItem[];
-  } catch {
-    return [];
-  }
-}
-
-/** Deel boeken met een Boekbuddy (plaatst item in hun inbox). */
-export function shareWithFriend(
+export async function shareWithFriend(
   toUsername: string,
-  bookSnapshots: { title: string; authors: string; coverUrl?: string; seriesName?: string }[],
-  shelfName?: string
-): { ok: true } | { ok: false; error: string } {
+  bookSnapshots: SharedBookSnapshot[],
+  shelfName: string | undefined,
+  myFriends: string[]
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const me = getCurrentUsername();
   if (!me) return { ok: false, error: "Niet ingelogd." };
   const to = toUsername.trim();
   if (!to) return { ok: false, error: "Kies een Boekbuddy." };
-  const friendList = loadFriends();
-  if (!friendList.some((u) => u.toLowerCase() === to.toLowerCase())) {
+  if (!myFriends.some((u) => u.toLowerCase() === to.toLowerCase()))
     return { ok: false, error: "Alleen met Boekbuddies kun je delen." };
-  }
   if (!bookSnapshots.length) return { ok: false, error: "Geen boeken om te delen." };
-  const item: SharedItem = {
-    from: me,
-    books: bookSnapshots.map((b) => ({ title: b.title, authors: b.authors, coverUrl: b.coverUrl, seriesName: b.seriesName })),
-    shelfName,
-    sharedAt: new Date().toISOString()
-  };
-  const recipientInbox = loadSharedInboxForUser(to);
-  saveSharedInbox(to, [...recipientInbox, item]);
+
+  const itemId = instantId();
+  await db.transact([
+    db.tx.sharedInboxItems[itemId].update({
+      toUsername: to,
+      fromUsername: me,
+      books: bookSnapshots.map((b) => ({
+        title: b.title,
+        authors: b.authors,
+        coverUrl: b.coverUrl,
+        seriesName: b.seriesName,
+      })),
+      shelfName: shelfName ?? null,
+      sharedAt: new Date().toISOString(),
+    }),
+  ]);
   return { ok: true };
 }
 
-/** Voeg boeken uit een gedeeld item toe aan mijn TBR. Boeken die al in de bibliotheek staan (zelfde titel + auteur, elk status) worden overgeslagen. Retourneert { added, skipped }. */
-export function addSharedItemToTbr(itemIndex: number): { added: number; skipped: number } {
-  const me = getCurrentUsername();
-  if (!me) return { added: 0, skipped: 0 };
-  const inbox = loadSharedInbox();
-  if (itemIndex < 0 || itemIndex >= inbox.length) return { added: 0, skipped: 0 };
-  const item = inbox[itemIndex];
-  const currentBooks = loadBooks();
+export async function dismissSharedItem(idbId: string): Promise<void> {
+  await db.transact([db.tx.sharedInboxItems[idbId].delete()]);
+}
+
+export async function addSharedItemToTbr(
+  item: SharedItem & { _idbId: string },
+  currentBooks: Book[]
+): Promise<{ added: number; skipped: number }> {
   const norm = (t: string) => (t ?? "").trim().toLowerCase();
-  const exists = (title: string, authors: string) =>
-    currentBooks.some(
-      (b) => norm(b.title) === norm(title) && norm(b.authors) === norm(authors)
-    );
-  const toAdd = item.books.filter((b) => !exists(b.title, b.authors));
+  const toAdd = item.books.filter(
+    (b) => !currentBooks.some((cb) => norm(cb.title) === norm(b.title) && norm(cb.authors) === norm(b.authors))
+  );
   const skipped = item.books.length - toAdd.length;
   let idx = 0;
-  const newBooks = toAdd.map((b) => ({
+  const newBooks: Book[] = toAdd.map((b) => ({
     id: `book-${Date.now()}-${idx++}-${Math.random().toString(36).slice(2, 9)}`,
     title: b.title,
     authors: b.authors,
     coverUrl: b.coverUrl,
-    status: "wil-ik-lezen" as const,
-    order: undefined
+    status: "wil-ik-lezen" as ReadStatus,
   }));
   if (newBooks.length > 0) {
-    saveBooks([...currentBooks, ...newBooks]);
+    await saveBooks([...currentBooks, ...newBooks]);
   }
-  const updatedInbox = inbox.filter((_, i) => i !== itemIndex);
-  saveSharedInbox(me, updatedInbox);
+  await dismissSharedItem(item._idbId);
   return { added: newBooks.length, skipped };
 }
 
-/** Voeg boek-snapshots toe aan mijn bibliotheek (TBR of plank). Bestaande boeken (zelfde titel+auteur) worden overgeslagen. */
-export function addBookSnapshotsToMyLibrary(
+export async function addBookSnapshotsToMyLibrary(
   snapshots: SharedBookSnapshot[],
-  options: { status?: ReadStatus; shelfId?: string }
-): { added: number; skipped: number } {
+  options: { status?: ReadStatus; shelfId?: string },
+  currentBooks: Book[]
+): Promise<{ added: number; skipped: number }> {
   const me = getCurrentUsername();
   if (!me || !snapshots.length) return { added: 0, skipped: 0 };
-  const currentBooks = loadBooks();
+
   const norm = (t: string) => (t ?? "").trim().toLowerCase();
   const systemStatus: Record<string, ReadStatus> = {
     "wil-ik-lezen": "wil-ik-lezen",
     "aan-het-lezen": "aan-het-lezen",
-    gelezen: "gelezen"
+    gelezen: "gelezen",
   };
   const status: ReadStatus =
     options.status ??
-    (options.shelfId && systemStatus[options.shelfId]) ??
-    "wil-ik-lezen";
+    (options.shelfId ? (systemStatus[options.shelfId] ?? "wil-ik-lezen") : "wil-ik-lezen");
   const customShelfId = options.shelfId && !systemStatus[options.shelfId] ? options.shelfId : null;
 
   const nextBooks = [...currentBooks];
@@ -800,50 +573,190 @@ export function addBookSnapshotsToMyLibrary(
       coverUrl: snapshot.coverUrl,
       status,
       order: undefined,
-      shelfIds
+      shelfIds,
     });
     createdCount += 1;
   });
 
   if (createdCount > 0 || updatedExistingCount > 0) {
-    saveBooks(nextBooks);
+    await saveBooks(nextBooks);
   }
-
   return { added: createdCount + updatedExistingCount, skipped };
 }
 
-/** Voeg alleen de geselecteerde boeken uit een gedeeld item toe aan TBR; haal ze uit het item. */
-export function addSharedItemBooksToTbr(
-  itemIndex: number,
-  bookIndices: number[]
-): { added: number; skipped: number } {
-  const me = getCurrentUsername();
-  if (!me) return { added: 0, skipped: 0 };
-  const inbox = loadSharedInbox();
-  if (itemIndex < 0 || itemIndex >= inbox.length) return { added: 0, skipped: 0 };
-  const item = inbox[itemIndex];
+// ─── Boeken van andere gebruikers (Boekbuddy) ─────────────────────────────────
+
+export async function loadBooksForUserAsync(username: string): Promise<Book[]> {
+  const result = await db.queryOnce({ profiles: { $: { where: { username } } } });
+  const profile = result.data?.profiles?.[0] as { books?: unknown } | undefined;
+  return Array.isArray(profile?.books) ? (profile!.books as Book[]) : [];
+}
+
+export async function loadShelvesForUserAsync(username: string): Promise<Shelf[]> {
+  const result = await db.queryOnce({ profiles: { $: { where: { username } } } });
+  const profile = result.data?.profiles?.[0] as { shelves?: unknown } | undefined;
+  const shelves = profile?.shelves;
+  return Array.isArray(shelves) && (shelves as Shelf[]).length > 0
+    ? (shelves as Shelf[])
+    : DEFAULT_SHELVES;
+}
+
+// ─── Client-side localStorage-migratie (stil, eenmalig bij eerste login) ──────
+
+/**
+ * Wordt aangeroepen na succesvolle login. Controleert of het InstantDB-profiel
+ * leeg is maar er localStorage-data bestaat. Als dat zo is, worden alle gegevens
+ * stil naar InstantDB gepusht. De gebruiker merkt hier niets van.
+ */
+export async function migrateLocalStorageToInstant(profileId: string): Promise<void> {
+  const username = getCurrentUsername();
+  if (!username) return;
+
+  // Voorkom dubbele migratie
+  const alreadyMigrated = window.localStorage.getItem(LS_MIGRATED_FLAG) === "true";
+  if (alreadyMigrated) return;
+
+  const lsBooks = lsGet<Book[]>(`${LS_BOOKS_KEY}_${username}`, []);
+  const lsShelves = lsGet<Shelf[]>(`${LS_SHELVES_KEY}_${username}`, []);
+  const lsChallenge = lsGet<ReadingChallenge | null>(`${LS_CHALLENGE_KEY}_${username}`, null);
+  const lsFriends = lsGet<string[]>(`${LS_FRIENDS_KEY}_${username}`, []);
+  const lsShelfViewSettings = lsGet<ShelfViewSettings>(
+    `${LS_SHELF_VIEW_SETTINGS_KEY}_${username}`,
+    DEFAULT_SHELF_VIEW_SETTINGS
+  );
+  const lsGenreAllowlist = lsGet<string[]>(`${LS_GENRE_FETCH_ALLOWLIST_KEY}_${username}`, []);
+
+  // Leestempo: meerdere keys proberen
+  const lsReadingPaceRaw =
+    window.localStorage.getItem(`${LS_READING_PACE_KEY}_${username}`) ??
+    window.localStorage.getItem(LS_READING_PACE_KEY);
+  const lsReadingPace =
+    lsReadingPaceRaw != null && Number.isFinite(Number(lsReadingPaceRaw)) && Number(lsReadingPaceRaw) > 0
+      ? Math.round(Number(lsReadingPaceRaw))
+      : null;
+
+  // Controleer of er lokale data is
+  const hasLocalData = lsBooks.length > 0 || lsShelves.length > 0 || lsFriends.length > 0;
+  if (!hasLocalData) {
+    window.localStorage.setItem(LS_MIGRATED_FLAG, "true");
+    return;
+  }
+
+  // Bouw update-object
+  const updateData: Record<string, unknown> = {
+    books: lsBooks,
+    shelves: lsShelves.length > 0 ? lsShelves : DEFAULT_SHELVES,
+    friends: lsFriends,
+    shelfViewSettings: lsShelfViewSettings,
+    genreFetchAllowlist: lsGenreAllowlist,
+  };
+  if (lsChallenge != null) updateData.challenge = lsChallenge;
+  if (lsReadingPace != null) updateData.readingPace = lsReadingPace;
+
+  await db.transact([db.tx.profiles[profileId].update(updateData)]);
+
+  // Vriendschapsverzoeken migreren
+  const lsFriendRequests = lsGet<
+    { from: string; to: string; status: string }[]
+  >(LS_FRIEND_REQUESTS_KEY, []);
+  for (const fr of lsFriendRequests) {
+    const frId = instantId();
+    await db.transact([
+      db.tx.friendRequests[frId].update({
+        fromUsername: fr.from,
+        toUsername: fr.to,
+        status: fr.status,
+      }),
+    ]);
+  }
+
+  // Gedeelde inbox migreren
+  const lsSharedInbox = lsGet<SharedItem[]>(`${LS_SHARED_INBOX_KEY}_${username}`, []);
+  for (const item of lsSharedInbox) {
+    const itemId = instantId();
+    await db.transact([
+      db.tx.sharedInboxItems[itemId].update({
+        toUsername: username,
+        fromUsername: item.from,
+        books: item.books,
+        shelfName: item.shelfName ?? null,
+        sharedAt: item.sharedAt,
+      }),
+    ]);
+  }
+
+  window.localStorage.setItem(LS_MIGRATED_FLAG, "true");
+  window.dispatchEvent(new Event("bt_books_updated_v1"));
+}
+
+// ─── Backward-compatible synchrone lees-functies (lezen uit InstantDB via hook) ──
+// Deze functies zijn niet meer primair — gebruik useInstantData() in componenten.
+// Ze zijn beschikbaar als noodoplossing waar hooks niet werken.
+
+export function loadReadingPace(): number | null {
+  // Kan niet synchroon uit InstantDB lezen — gebruik useInstantData().readingPace
+  return null;
+}
+
+// Lege stubs voor backward compatibility (worden niet meer gebruikt na update pages)
+export function loadBooks(): Book[] { return []; }
+export function loadShelves(): Shelf[] { return DEFAULT_SHELVES; }
+export function loadChallenge(): ReadingChallenge | null { return null; }
+export function loadFriends(): string[] { return []; }
+export function loadFriendRequests(): FriendRequest[] { return []; }
+export function loadSharedInbox(): SharedItem[] { return []; }
+export function loadBooksForUser(_username: string): Book[] { return []; }
+export function loadShelvesForUser(_username: string): Shelf[] { return DEFAULT_SHELVES; }
+
+// subscribeBooks wordt niet meer gebruikt (InstantDB is inherent reactief)
+export function subscribeBooks(_onBooks: (books: Book[]) => void): () => void {
+  return () => {};
+}
+
+// Sync-functies die niet meer nodig zijn
+export async function syncFromSupabase(): Promise<void> {}
+export async function pushLocalToSupabase(): Promise<void> {}
+
+// addSharedItemBooksToTbr (gedeeltelijk toevoegen uit inbox-item)
+export async function addSharedItemBooksToTbr(
+  item: SharedItem & { _idbId: string },
+  bookIndices: number[],
+  currentBooks: Book[]
+): Promise<{ added: number; skipped: number }> {
   const toAdd = bookIndices
     .filter((i) => i >= 0 && i < item.books.length)
     .map((i) => item.books[i]);
   if (toAdd.length === 0) return { added: 0, skipped: 0 };
-  const result = addBookSnapshotsToMyLibrary(toAdd, { status: "wil-ik-lezen" });
-  const remainingIndices = new Set(bookIndices);
-  const newBooks = item.books.filter((_, i) => !remainingIndices.has(i));
-  const newInbox =
-    newBooks.length === 0
-      ? inbox.filter((_, i) => i !== itemIndex)
-      : inbox.map((it, i) => (i === itemIndex ? { ...it, books: newBooks } : it));
-  saveSharedInbox(me, newInbox);
+  const result = await addBookSnapshotsToMyLibrary(toAdd, { status: "wil-ik-lezen" }, currentBooks);
+
+  // Verwijder item volledig uit inbox (alle geselecteerde boeken zijn behandeld)
+  const remainingBooks = item.books.filter((_, i) => !bookIndices.includes(i));
+  if (remainingBooks.length === 0) {
+    await dismissSharedItem(item._idbId);
+  } else {
+    // Verwijder geselecteerde boeken uit het item, behoud de rest
+    await db.transact([
+      db.tx.sharedInboxItems[item._idbId].update({ books: remainingBooks }),
+    ]);
+  }
   return result;
 }
 
-/** Verwijder een gedeeld item uit de inbox (zonder toevoegen aan TBR). */
-export function dismissSharedItem(itemIndex: number): void {
-  const me = getCurrentUsername();
-  if (!me) return;
-  const inbox = loadSharedInbox();
-  if (itemIndex < 0 || itemIndex >= inbox.length) return;
-  const updatedInbox = inbox.filter((_, i) => i !== itemIndex);
-  saveSharedInbox(me, updatedInbox);
+// useLoadGenreFetchAllowlist hook-wrapper voor componenten die de allowlist apart laden
+export function useInstantProfile() {
+  const username = getCurrentUsername();
+  const { data } = db.useQuery(
+    username ? { profiles: { $: { where: { username } } } } : null
+  );
+  return (data?.profiles?.[0] ?? null) as {
+    id: string;
+    username: string;
+    books?: unknown;
+    shelves?: unknown;
+    challenge?: unknown;
+    friends?: unknown;
+    shelfViewSettings?: unknown;
+    genreFetchAllowlist?: unknown;
+    readingPace?: number;
+  } | null;
 }
-

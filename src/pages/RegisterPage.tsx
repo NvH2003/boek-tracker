@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useBasePath, withBase } from "../routing";
-import { createAccount, setCurrentUser } from "../auth";
+import { createAccount } from "../auth";
 
 interface RegisterPageProps {
   onLogin?: () => void;
@@ -35,7 +35,6 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
       setError(result.error);
       return;
     }
-    setCurrentUser(username.trim());
     onLogin?.();
     const next = basePath === "/web" ? "/web/dashboard" : "/boeken";
     navigate(withBase(basePath, next), { replace: true });
@@ -45,7 +44,7 @@ export function RegisterPage({ onLogin }: RegisterPageProps) {
     <div className="page login-page">
       <h1>Account aanmaken</h1>
       <p className="page-intro">
-        Maak een account aan met gebruikersnaam en wachtwoord. Je gegevens blijven op dit apparaat.
+        Maak een account aan met gebruikersnaam en wachtwoord. Je gegevens worden opgeslagen in de cloud.
       </p>
       <form onSubmit={handleSubmit} className="card form-card">
         {error && <p className="form-error">{error}</p>}

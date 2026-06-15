@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ReadStatus, Shelf } from "../types";
 
@@ -11,30 +11,27 @@ const STATUS_LABELS: Record<ReadStatus, string> = {
 import { useBasePath, withBase } from "../routing";
 import { useZoom } from "../ZoomContext";
 import {
-  loadShelves,
+  useInstantData,
   saveShelves,
-  loadGenreFetchAllowlist,
   saveGenreFetchAllowlist,
-  loadFriends,
+  saveReadingPace,
   getPendingReceivedRequests,
   getPendingSentRequests,
   sendFriendRequest,
   acceptFriendRequest,
   rejectFriendRequest,
   removeFriend,
-  loadSharedInbox,
   addSharedItemToTbr,
   addSharedItemBooksToTbr,
   addBookSnapshotsToMyLibrary,
   dismissSharedItem,
-  loadReadingPace,
-  saveReadingPace
+  migrateLocalStorageToInstant,
 } from "../storage";
 import { parseGenreAllowlistTextarea } from "../fetchBookGenres";
-import { getCurrentUsername, getExistingUsernames, changePassword, deleteAccount, refreshAuthCache } from "../auth";
+import { getCurrentUsername, changePassword, deleteAccount } from "../auth";
+import { db } from "../db";
 
 const DISPLAY_NAME_KEY = "bt_user_name";
-const READING_PACE_PREFIX = "bt_reading_pace_v1";
 
 function displayNameKey(): string {
   const u = getCurrentUsername();
@@ -52,12 +49,29 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
   const [name, setName] = useState<string>(
     () => window.localStorage.getItem(displayNameKey()) ?? ""
   );
-  const [pagesPerHour, setPagesPerHour] = useState<string>(() => {
-    const p = loadReadingPace();
-    return p != null ? String(p) : "";
-  });
 
-  const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
+  const {
+    books,
+    shelves,
+    friends,
+    friendRequests,
+    sharedInbox,
+    genreFetchAllowlist,
+    readingPace,
+    profileId,
+    isLoading: dataLoading,
+  } = useInstantData();
+
+  const [pagesPerHour, setPagesPerHour] = useState<string>(
+    () => (readingPace != null ? String(readingPace) : "")
+  );
+  // Sync pagesPerHour wanneer readingPace beschikbaar komt vanuit InstantDB
+  useEffect(() => {
+    if (readingPace != null && pagesPerHour === "") {
+      setPagesPerHour(String(readingPace));
+    }
+  }, [readingPace]);
+
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -68,28 +82,64 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
   const [passwordError, setPasswordError] = useState("");
   const [passwordSuccess, setPasswordSuccess] = useState(false);
 
-  const [friends, setFriends] = useState<string[]>(() => loadFriends());
-  const [pendingReceived, setPendingReceived] = useState<string[]>(() => getPendingReceivedRequests());
-  const [pendingSent, setPendingSent] = useState<string[]>(() => getPendingSentRequests());
+  const pendingReceived = useMemo(
+    () => getPendingReceivedRequests(friendRequests, username ?? ""),
+    [friendRequests, username]
+  );
+  const pendingSent = useMemo(
+    () => getPendingSentRequests(friendRequests, username ?? ""),
+    [friendRequests, username]
+  );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [friendError, setFriendError] = useState("");
   const [showAccountModal, setShowAccountModal] = useState(false);
-  const [sharedInbox, setSharedInbox] = useState(() => loadSharedInbox());
   const [showSharedInboxModal, setShowSharedInboxModal] = useState(false);
   const [sharedAddMessage, setSharedAddMessage] = useState<{ added: number; skipped: number } | null>(null);
   const [toast, setToast] = useState("");
   const [genreAllowlistText, setGenreAllowlistText] = useState(() =>
-    loadGenreFetchAllowlist().join("\n")
+    genreFetchAllowlist.join("\n")
   );
-  /** Per shared-item index: set van boek-indices die geselecteerd zijn */
-  const [selectedSharedBookIndices, setSelectedSharedBookIndices] = useState<Map<number, Set<number>>>(() => new Map());
+  // Sync genreAllowlistText wanneer data beschikbaar komt
+  useEffect(() => {
+    setGenreAllowlistText(genreFetchAllowlist.join("\n"));
+  }, [genreFetchAllowlist]);
+
+  const [selectedSharedBookIndices, setSelectedSharedBookIndices] = useState<Map<number, Set<number>>>(
+    () => new Map()
+  );
   const [showShelfPickerForItem, setShowShelfPickerForItem] = useState<number | null>(null);
   const [newShelfNameInbox, setNewShelfNameInbox] = useState("");
-  /** Bij eigen boekenkast: kies eerst status voordat we toevoegen */
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
   const [deleteAccountPassword, setDeleteAccountPassword] = useState("");
   const [deleteAccountError, setDeleteAccountError] = useState("");
   const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
+
+  // Zoek Boekbuddies via InstantDB (real-time)
+  const { data: searchData } = db.useQuery(
+    searchQuery.trim()
+      ? {
+          profiles: {
+            $: {
+              where: { username: { $like: `%${searchQuery.trim().toLowerCase()}%` } },
+            },
+          },
+        }
+      : null
+  );
+  const searchResults: string[] = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const current = (username ?? "").toLowerCase();
+    return ((searchData?.profiles ?? []) as Array<{ username: string }>)
+      .map((p) => p.username)
+      .filter((u) => u.toLowerCase() !== current);
+  }, [searchData, searchQuery, username]);
+
+  // Eenmalige localStorage-migratie na eerste login
+  useEffect(() => {
+    if (!profileId || dataLoading) return;
+    migrateLocalStorageToInstant(profileId);
+  }, [profileId, dataLoading]);
 
   const sortedShelves = useMemo(() => {
     const systemOrder: Record<string, number> = {
@@ -108,28 +158,6 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
       return a.name.localeCompare(b.name);
     });
   }, [shelves]);
-  const [usernamesRefresh, setUsernamesRefresh] = useState(0);
-  const [usernamesLoadError, setUsernamesLoadError] = useState<string | null>(null);
-
-  // Zoekresultaten: bestaande accounts die matchen met zoektekst, exclusief jezelf (usernamesRefresh zorgt voor herberekenen na cache-refresh)
-  const searchResults = (() => {
-    void usernamesRefresh;
-    const q = searchQuery.trim().toLowerCase();
-    const existing = getExistingUsernames();
-    const current = (username ?? "").toLowerCase();
-    return existing.filter(
-      (u) => u.toLowerCase() !== current && (!q || u.toLowerCase().includes(q))
-    );
-  })();
-
-  function refreshFriendState() {
-    setFriends(loadFriends());
-    setPendingReceived(getPendingReceivedRequests());
-    setPendingSent(getPendingSentRequests());
-  }
-  function refreshSharedInbox() {
-    setSharedInbox(loadSharedInbox());
-  }
 
   function handleSaveGenreAllowlist() {
     const items = parseGenreAllowlistTextarea(genreAllowlistText);
@@ -170,68 +198,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
     return selectedSharedBookIndices.get(itemIndex)?.size ?? 0;
   }
 
-  useEffect(() => {
-    setGenreAllowlistText(loadGenreFetchAllowlist().join("\n"));
-  }, [username]);
-
-  useEffect(() => {
-    const p = loadReadingPace();
-    setPagesPerHour(p != null ? String(p) : "");
-  }, [username]);
-
-  /** Bij openen accountmodal: altijd weergavenaam en leestempo uit storage (na sync / andere tab). */
-  useEffect(() => {
-    if (!showAccountModal) return;
-    setName(window.localStorage.getItem(displayNameKey()) ?? "");
-    const p = loadReadingPace();
-    setPagesPerHour(p != null ? String(p) : "");
-  }, [showAccountModal]);
-
-  // Bij openen van Profiel: gebruikerslijst vernieuwen (Supabase)
-  useEffect(() => {
-    refreshAuthCache().then((res) => {
-      if (res.ok) {
-        setUsernamesRefresh((v) => v + 1);
-        setUsernamesLoadError(null);
-      } else {
-        setUsernamesLoadError(res.error);
-      }
-    });
-  }, []);
-
-  async function refreshBoekbuddiesList() {
-    setUsernamesLoadError(null);
-    const res = await refreshAuthCache();
-    if (res.ok) {
-      setUsernamesRefresh((v) => v + 1);
-      setToast("Lijst vernieuwd.");
-      window.setTimeout(() => setToast(""), 2000);
-    } else {
-      setUsernamesLoadError(res.error);
-    }
-  }
-
-  // Keep shelves, display name, friends/requests and shared inbox in sync if another tab edits them
-  useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (e.key?.startsWith("bt_shelves_v1")) setShelves(loadShelves());
-      if (e.key?.startsWith(DISPLAY_NAME_KEY)) setName(window.localStorage.getItem(displayNameKey()) ?? "");
-      if (e.key?.startsWith(READING_PACE_PREFIX)) {
-        const p = loadReadingPace();
-        setPagesPerHour(p != null ? String(p) : "");
-      }
-      if (e.key?.startsWith("bt_friends_v1") || e.key === "bt_friend_requests_v1") refreshFriendState();
-      if (e.key?.startsWith("bt_shared_inbox_v1")) refreshSharedInbox();
-      if (e.key?.startsWith("bt_genre_fetch_allowlist_v1")) {
-        setGenreAllowlistText(loadGenreFetchAllowlist().join("\n"));
-      }
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
   function persist(next: Shelf[]) {
-    setShelves(next);
     saveShelves(next);
   }
 
@@ -275,7 +242,6 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
 
   function saveProfile(e: FormEvent) {
     e.preventDefault();
-    // Leestempo eerst: zo wordt het altijd opgeslagen, ook als de weergavenaam (nog) leeg is.
     const paceTrim = pagesPerHour.trim();
     let nextPaceInField = "";
     let paceWritten = false;
@@ -289,8 +255,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
       }
     }
     if (nextPaceInField === "") {
-      const stored = loadReadingPace();
-      nextPaceInField = stored != null ? String(stored) : "";
+      nextPaceInField = readingPace != null ? String(readingPace) : "";
     }
     setPagesPerHour(nextPaceInField);
 
@@ -309,29 +274,24 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
     window.setTimeout(() => setToast(""), 2200);
   }
 
-  function handleSendFriendRequest(username: string) {
+  async function handleSendFriendRequest(targetUsername: string) {
     setFriendError("");
-    const result = sendFriendRequest(username);
-    if (result.ok) {
-      refreshFriendState();
-    } else {
+    const result = await sendFriendRequest(targetUsername, friends, friendRequests);
+    if (!result.ok) {
       setFriendError(result.error);
     }
   }
 
-  function handleAcceptRequest(fromUsername: string) {
-    acceptFriendRequest(fromUsername);
-    refreshFriendState();
+  async function handleAcceptRequest(fromUsername: string) {
+    await acceptFriendRequest(fromUsername, friendRequests, friends);
   }
 
-  function handleRejectRequest(fromUsername: string) {
-    rejectFriendRequest(fromUsername);
-    refreshFriendState();
+  async function handleRejectRequest(fromUsername: string) {
+    await rejectFriendRequest(fromUsername, friendRequests);
   }
 
-  function handleRemoveFriend(username: string) {
-    removeFriend(username);
-    refreshFriendState();
+  async function handleRemoveFriend(targetUsername: string) {
+    await removeFriend(targetUsername, friends);
   }
 
   async function handleChangePassword(e: FormEvent) {
@@ -475,7 +435,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                   Voor leessessies op de lees-challenge. Klik op Opslaan om te bewaren; het blijft staan
                   tot je het aanpast en opnieuw opslaat.
                 </span>
-                {loadReadingPace() != null && (
+                {readingPace != null && (
                   <button
                     type="button"
                     className="link-button profile-clear-pace-btn"
@@ -618,22 +578,17 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
         )}
 
         <h3 className="profile-subtitle">Zoek Boekbuddies</h3>
-        <p className="profile-search-hint">De accountlijst wordt geladen bij openen en bij klikken in het zoekveld. Zie je iemand niet? Klik in het veld of op Vernieuwen.</p>
+        <p className="profile-search-hint">Typ een naam om te zoeken.</p>
         <div className="profile-search-wrap">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setFriendError(""); }}
-            onFocus={refreshBoekbuddiesList}
             placeholder="Zoek op gebruikersnaam…"
             className="profile-search-input"
             autoComplete="username"
           />
-          <button type="button" className="secondary-button profile-refresh-btn" onClick={refreshBoekbuddiesList}>
-            Vernieuwen
-          </button>
         </div>
-        {usernamesLoadError && <p className="form-error">Lijst kon niet worden geladen: {usernamesLoadError}</p>}
         {friendError && <p className="form-error">{friendError}</p>}
         {searchQuery.trim() && (
           <div className="profile-search-results">
@@ -667,12 +622,9 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
         )}
 
         <h3 className="profile-subtitle">Mijn Boekbuddies</h3>
-        {(() => {
-          const existingSet = new Set(getExistingUsernames().map((x) => x.toLowerCase()));
-          const visibleFriends = friends.filter((u) => existingSet.has(u.toLowerCase()));
-          return visibleFriends.length > 0 ? (
+        {friends.length > 0 ? (
           <div className="profile-chips">
-            {visibleFriends.map((u) => (
+            {friends.map((u) => (
               <div key={u} className="profile-chip">
                 <span>{u}</span>
                 <div className="profile-chip-actions">
@@ -691,10 +643,9 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
               </div>
             ))}
           </div>
-          ) : (
+        ) : (
           <p className="profile-empty">Nog geen Boekbuddies. Zoek hierboven en stuur een vriendschapsverzoek.</p>
-        );
-        })()}
+        )}
       </section>
 
       <section className="profile-card card">
@@ -820,10 +771,9 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                     <button
                       type="button"
                       className="primary-button shared-inbox-btn"
-                      onClick={() => {
-                        const result = addSharedItemToTbr(itemIndex);
+                      onClick={async () => {
+                        const result = await addSharedItemToTbr(item, books);
                         setSharedAddMessage(result);
-                        refreshSharedInbox();
                         clearSelectionForItem(itemIndex);
                         setShowShelfPickerForItem(null);
                         const msg = result.added > 0 ? (result.added === 1 ? "1 boek toegevoegd aan TBR." : `${result.added} boeken toegevoegd aan TBR.`) + (result.skipped > 0 ? ` ${result.skipped} stond/stonden al in je lijst.` : "") : (result.skipped > 0 ? `${result.skipped} stond/stonden al in je lijst.` : "");
@@ -838,11 +788,10 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                         <button
                           type="button"
                           className="primary-button shared-inbox-btn shared-inbox-btn-secondary"
-                          onClick={() => {
+                          onClick={async () => {
                             const indices = Array.from(selectedSharedBookIndices.get(itemIndex) ?? []);
-                            const result = addSharedItemBooksToTbr(itemIndex, indices);
+                            const result = await addSharedItemBooksToTbr(item, indices, books);
                             setSharedAddMessage(result);
-                            refreshSharedInbox();
                             clearSelectionForItem(itemIndex);
                             const msg = result.added > 0 ? (result.added === 1 ? "1 boek toegevoegd aan TBR." : `${result.added} boeken toegevoegd aan TBR.`) + (result.skipped > 0 ? ` ${result.skipped} stond/stonden al in je lijst.` : "") : (result.skipped > 0 ? `${result.skipped} stond/stonden al in je lijst.` : "");
                             if (msg) setToast(msg);
@@ -868,12 +817,12 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                                   key={shelf.id}
                                   type="button"
                                   className="shared-inbox-shelf-option"
-                                  onClick={() => {
+                                  onClick={async () => {
                                     const indices = Array.from(selectedSharedBookIndices.get(itemIndex) ?? []);
                                     const snapshots = indices.map((i) => item.books[i]);
                                     const result = shelf.system
-                                      ? addBookSnapshotsToMyLibrary(snapshots, { shelfId: shelf.id })
-                                      : addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: shelf.id });
+                                      ? await addBookSnapshotsToMyLibrary(snapshots, { shelfId: shelf.id }, books)
+                                      : await addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: shelf.id }, books);
                                     setSharedAddMessage(result);
                                     clearSelectionForItem(itemIndex);
                                     setShowShelfPickerForItem(null);
@@ -899,7 +848,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                                   type="button"
                                   className="shared-inbox-shelf-option"
                                   disabled={!newShelfNameInbox.trim()}
-                                  onClick={() => {
+                                  onClick={async () => {
                                     const name = newShelfNameInbox.trim();
                                     if (!name) return;
                                     const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
@@ -907,7 +856,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                                     persist(nextShelves);
                                     const indices = Array.from(selectedSharedBookIndices.get(itemIndex) ?? []);
                                     const snapshots = indices.map((i) => item.books[i]);
-                                    const result = addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: newShelf.id });
+                                    const result = await addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: newShelf.id }, books);
                                     setSharedAddMessage(result);
                                     clearSelectionForItem(itemIndex);
                                     setShowShelfPickerForItem(null);
@@ -928,9 +877,8 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                     <button
                       type="button"
                       className="link-button shared-inbox-dismiss"
-                      onClick={() => {
-                        dismissSharedItem(itemIndex);
-                        refreshSharedInbox();
+                      onClick={async () => {
+                        await dismissSharedItem(item._idbId);
                         clearSelectionForItem(itemIndex);
                         setShowShelfPickerForItem(null);
                       }}
@@ -948,4 +896,3 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
     </div>
   );
 }
-

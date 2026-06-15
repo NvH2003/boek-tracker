@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { loadBooks, loadShelves, saveShelves, loadChallenge, saveChallenge, saveBooks, subscribeBooks, loadFriends, shareWithFriend } from "../storage";
+import { useInstantData, saveShelves, saveChallenge, saveBooks, shareWithFriend } from "../storage";
 import { Book, Shelf, ReadStatus, ReadingChallenge } from "../types";
 import { useBasePath, withBase } from "../routing";
 import { BookDetailPage } from "./BookDetailPage";
@@ -139,11 +139,7 @@ type DashboardMode = "toggle" | "desktop" | "mobile";
 
 export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
   const basePath = useBasePath();
-  const [books, setBooks] = useState<Book[]>(() => loadBooks());
-  const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
-  const [challenge, setChallenge] = useState<ReadingChallenge | null>(() =>
-    loadChallenge()
-  );
+  const { books, shelves, challenge, friends } = useInstantData();
   const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set());
   const [dashboardView, setDashboardView] = useState<"desktop" | "mobile">(
     mode === "toggle" ? "desktop" : mode
@@ -240,11 +236,6 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
     });
     return Array.from(set).sort();
   }, [books]);
-
-  // Sync books tussen tabs/shells (web ↔ mobile)
-  useEffect(() => {
-    return subscribeBooks(setBooks);
-  }, []);
 
   // Als we een vaste mode hebben (desktop/mobile), forceer die view.
   useEffect(() => {
@@ -428,9 +419,6 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
 
   function updateBooks(next: Book[]) {
     saveBooks(next);
-    setBooks(next);
-    // Als alle geselecteerde boeken verwijderd of gewijzigd zijn, en er niks meer geselecteerd is,
-    // schakel de selectiemodus uit.
     setSelectedBookIds((prev) => {
       const remaining = new Set(
         Array.from(prev).filter((id) => next.some((b) => b.id === id))
@@ -683,7 +671,6 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
       }
     };
     saveChallenge(updated);
-    setChallenge(updated);
   }
 
   function markDayAsComplete() {
@@ -1810,9 +1797,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                   const name = newShelfName.trim();
                   if (!name) return;
                   const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
-                  const next = [...shelves, newShelf];
-                  saveShelves(next);
-                  setShelves(next);
+                  saveShelves([...shelves, newShelf]);
                   addBooksToShelf(newShelf.id);
                   setNewShelfName("");
                 }}
@@ -1843,12 +1828,12 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
             </p>
             {shareWithBuddyError && <p className="form-error">{shareWithBuddyError}</p>}
             <ul className="add-to-shelf-list">
-              {loadFriends().map((friend) => (
+              {friends.map((friend) => (
                 <li key={friend}>
                   <button
                     type="button"
                     className="add-to-shelf-item"
-                    onClick={() => {
+                    onClick={async () => {
                       const selectedBooks = books.filter((b) => selectedBookIds.has(b.id));
                       const snapshots = selectedBooks.map((b) => ({
                         title: b.title,
@@ -1856,7 +1841,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                         coverUrl: b.coverUrl,
                         seriesName: b.seriesName
                       }));
-                      const result = shareWithFriend(friend, snapshots);
+                      const result = await shareWithFriend(friend, snapshots, undefined, friends);
                       if (result.ok) {
                         setSelectedBookIds(new Set());
                         setShowShareWithBuddyModal(false);
@@ -1873,7 +1858,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                 </li>
               ))}
             </ul>
-            {loadFriends().length === 0 && (
+            {friends.length === 0 && (
               <p className="modal-intro">Je hebt nog geen Boekbuddies. Voeg eerst vrienden toe via Profiel.</p>
             )}
             <button

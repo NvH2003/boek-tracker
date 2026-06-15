@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { getGoogleBooksBrowserApiKey, hasGoogleBooksBrowserApiKey } from "./googleBooksBrowserKey";
 import { fetchBookGenresFromEdge } from "./fetchBookGenresFromEdge";
 import { mapFetchedGenresToStandardShelf } from "./standardGenres";
@@ -221,7 +220,6 @@ async function fetchBookGenresDirect(title: string, authors: string): Promise<st
  * `options.genreAllowlist`: optioneel; zie Profiel → “Toegestane genres”. Leeg = alle suggesties.
  */
 export async function fetchBookGenres(
-  client: SupabaseClient | null,
   title: string,
   authors: string,
   options?: { genreAllowlist?: string[] }
@@ -231,12 +229,8 @@ export async function fetchBookGenres(
   let raw: string[];
   if (hasGoogleBooksBrowserApiKey()) {
     raw = await fetchBookGenresDirect(title, authors);
-  } else if (client) {
-    raw = await fetchBookGenresFromEdge(client, title, authors);
   } else {
-    throw new Error(
-      "Geen VITE_GOOGLE_BOOKS_API_KEY in deze build en geen Supabase-client. Zet VITE_GOOGLE_BOOKS_API_KEY in .env (projectroot), herstart dev-server, of zet secret GOOGLE_BOOKS_API_KEY op Supabase en gebruik de Edge Function."
-    );
+    raw = await fetchBookGenresFromEdge(title, authors);
   }
 
   const filtered = filterGenresByAllowlist(raw, allow);
