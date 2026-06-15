@@ -1,13 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { init } from "@instantdb/admin";
+import { createHash } from "crypto";
 
 const db = init({
   appId: process.env.INSTANT_APP_ID ?? process.env.VITE_INSTANT_APP_ID ?? "",
   adminToken: process.env.INSTANT_ADMIN_TOKEN ?? "",
 });
 
-async function sha256Hex(text: string): Promise<string> {
-  const { createHash } = await import("crypto");
+function sha256Hex(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
