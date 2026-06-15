@@ -974,8 +974,8 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                 setOrder(e.target.value);
               }
             }}
-            placeholder={seriesName ? "Bijv. 1.5" : "Bijv. 1.5"}
-            min="1"
+            placeholder={seriesName ? "Bijv. 0.5" : "Bijv. 1"}
+            min="0.1"
             step="any"
           />
         </div>
