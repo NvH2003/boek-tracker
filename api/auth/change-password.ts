@@ -27,18 +27,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "Kies een nieuw wachtwoord van minstens 4 tekens." });
   }
 
-  const trimmed = username.trim().toLowerCase();
+  const trimmedLower = username.trim().toLowerCase();
 
-  // Profiel ophalen
-  const result = await db.query({
-    profiles: { $: { where: { username: trimmed } } },
-  });
+  // Haal alle profielen op en doe case-insensitive match in JS
+  const result = await db.query({ profiles: {} });
   const profiles = (result.profiles ?? []) as Array<{
     id: string;
     username: string;
     passwordHash: string;
   }>;
-  const profile = profiles.find((p) => p.username.toLowerCase() === trimmed);
+  const profile = profiles.find((p) => p.username.toLowerCase() === trimmedLower);
 
   if (!profile) return res.status(404).json({ error: "Gebruiker niet gevonden." });
 
