@@ -12,7 +12,14 @@ function sha256Hex(text: string): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const appId = process.env.INSTANT_APP_ID ?? process.env.VITE_INSTANT_APP_ID ?? "";
+  const adminToken = process.env.INSTANT_ADMIN_TOKEN ?? "";
+  if (!appId || !adminToken) {
+    return res.status(500).json({ error: `Env vars ontbreken: appId=${!!appId} adminToken=${!!adminToken}` });
+  }
 
   const { username, password } = req.body as { username?: string; password?: string };
   if (!username?.trim() || !password) {
@@ -59,4 +66,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const token = await db.auth.createToken(fakeEmail);
 
   return res.status(200).json({ token, username: profile.username });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: `Server error: ${msg}` });
+  }
 }
