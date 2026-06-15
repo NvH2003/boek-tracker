@@ -37,7 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: "Wachtwoord is onjuist." });
   }
 
-  const fakeEmail = `${trimmed}@boektracker.local`;
+  const fakeEmail = `${trimmedLower}@boektracker.local`;
 
   // Verwijder alle vriendschapsverzoeken waarbij deze gebruiker betrokken is
   const frResult = await db.query({

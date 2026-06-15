@@ -26,7 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const existing = await db.query({
     profiles: { $: { where: { username: trimmed } } },
   });
-  const profiles = (existing.profiles ?? []) as Array<{ username: string }>;
+  const profiles = (existing.profiles ?? []) as Array<{ id: string; username: string }>;
   const taken = profiles.some((p) => p.username.toLowerCase() === trimmed.toLowerCase());
   if (taken) {
     return res.status(409).json({ error: "Deze gebruikersnaam bestaat al." });
