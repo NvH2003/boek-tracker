@@ -7,8 +7,8 @@ const rules = {
     allow: {
       view: "auth.id != null",
       create: "auth.id != null",
-      update: "auth.id != null && (data.ref('$user.id') == auth.id)",
-      delete: "auth.id != null && (data.ref('$user.id') == auth.id)",
+      update: "auth.id != null",
+      delete: "auth.id != null",
     },
   },
   friendRequests: {
