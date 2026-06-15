@@ -1,7 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useBasePath, withBase } from "../routing";
-import { verifyLogin } from "../auth";
+import { verifyLogin, authDebug } from "../auth";
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -28,10 +28,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       return;
     }
     setLoading(true);
-    const valid = await verifyLogin(trimmed, password);
+    const result = await verifyLogin(trimmed, password);
     setLoading(false);
-    if (!valid) {
-      setError("Onjuiste gebruikersnaam of wachtwoord.");
+    if (!result.ok) {
+      setError(result.error);
       return;
     }
     onLogin();

@@ -40,15 +40,32 @@ async function authFetch<T>(
   }
 }
 
-export async function verifyLogin(username: string, password: string): Promise<boolean> {
+export async function verifyLogin(
+  username: string,
+  password: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const result = await authFetch<{ token: string; username: string }>(
     "/api/auth/sign-in",
     { username, password }
   );
-  if (!result.ok) return false;
+  if (!result.ok) return { ok: false, error: result.error };
   setCurrentUser(result.data.username);
   await db.auth.signInWithToken(result.data.token);
-  return true;
+  return { ok: true };
+}
+
+export async function authDebug(): Promise<string> {
+  try {
+    const res = await fetch("/api/auth/sign-in", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "__debug__", password: "__debug__" }),
+    });
+    const json = await res.json() as { error?: string };
+    return `HTTP ${res.status}: ${json.error ?? JSON.stringify(json)}`;
+  } catch (e) {
+    return `Netwerkfout: ${String(e)}`;
+  }
 }
 
 export async function createAccount(
