@@ -7,7 +7,7 @@ import {
 } from "../challengeDailyGoals";
 import { applyLegacyDailyReading, applyMultiplePerBookDailyReading } from "../challengeReadingProgress";
 import { useBasePath, withBase } from "../routing";
-import { loadBooks, loadChallenge, loadReadingPace, saveChallenge, subscribeBooks } from "../storage";
+import { useInstantData, saveChallenge } from "../storage";
 import { Book, ReadingChallenge } from "../types";
 
 function formatDateDisplay(dateStr: string): string {
@@ -123,18 +123,7 @@ export function ReadingSessionPage() {
   const basePath = useBasePath();
   const challengePath = withBase(basePath, "/challenge");
 
-  const [books, setBooks] = useState<Book[]>(() => loadBooks());
-  const [challenge, setChallenge] = useState<ReadingChallenge | null>(() => loadChallenge());
-
-  useEffect(() => {
-    return subscribeBooks(setBooks);
-  }, []);
-
-  useEffect(() => {
-    setChallenge(loadChallenge());
-  }, [dateParam]);
-
-  const pagesPerHour = loadReadingPace();
+  const { books, challenge, readingPace: pagesPerHour } = useInstantData();
 
   const dailyGoals = useMemo(
     () => computeDailyGoals(challenge, books),
@@ -271,7 +260,6 @@ export function ReadingSessionPage() {
       }
       const next = applyMultiplePerBookDailyReading(challenge, dateParam, pagesByBookId);
       saveChallenge(next);
-      setChallenge(next);
     } else {
       const raw = legacyReadPage.trim();
       const n = Number(raw.replace(",", "."));
@@ -287,7 +275,6 @@ export function ReadingSessionPage() {
       }
       const next = applyLegacyDailyReading(challenge, dateParam, rounded);
       saveChallenge(next);
-      setChallenge(next);
     }
 
     setProgressSaved(true);

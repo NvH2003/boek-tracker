@@ -1,11 +1,11 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { loadBooks, loadShelves, saveBooks, saveShelves, subscribeBooks } from "../storage";
+import { useInstantData, saveBooks, saveShelves } from "../storage";
 import { Book, ReadStatus, Shelf } from "../types";
 import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
 import { parseGenres, parseGenresPreserveOrder } from "../genreUtils";
-import { isSupabaseConfigured, supabase } from "../supabase";
+import { fetchBookGenresFromEdge } from "../fetchBookGenresFromEdge";
 import { translateGenreToDutch } from "../genreTranslations";
 import { parseGoodreadsClipboardTextToPillLabels } from "../goodreadsClipboardGenres";
 
@@ -109,7 +109,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   const location = useLocation();
   const navigate = useNavigate();
   const basePath = useBasePath();
-  const [books, setBooks] = useState<Book[]>(() => loadBooks());
+  const { books, shelves } = useInstantData();
 
   function safeDecodeURIComponent(v: string | undefined): string | undefined {
     if (v == null) return undefined;
@@ -126,11 +126,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   const search = new URLSearchParams(location.search);
   const from = search.get("from");
   const fromShelfId = search.get("shelfId");
-
-  // Sync books tussen tabs/shells (web ↔ mobile)
-  useEffect(() => {
-    return subscribeBooks(setBooks);
-  }, []);
 
   const book = id ? books.find((b) => b.id === id) : undefined;
 
@@ -318,7 +313,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     setGenreQuickAdd("");
   }
 
-  const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
   const bookPlanks = useMemo(() => {
     const ids = book?.shelfIds ?? [];
     return ids
@@ -328,7 +322,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   }, [book?.shelfIds, shelves]);
 
   function persist(updatedBooks: Book[]) {
-    setBooks(updatedBooks);
     saveBooks(updatedBooks);
   }
 
@@ -669,7 +662,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     const created: Shelf = { id: `shelf-${Date.now()}`, name };
     const next = [...shelves, created];
     saveShelves(next);
-    setShelves(next);
     addBookToPlank(created.id);
   }
 

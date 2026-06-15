@@ -1,9 +1,8 @@
 import { Link, Route, Routes, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { registerSW } from "virtual:pwa-register";
-import { getCurrentUsername, clearCurrentUser, initSupabaseSession } from "./auth";
-import { syncFromSupabase, pushLocalToSupabase, loadSharedInbox } from "./storage";
-import { isSupabaseConfigured } from "./supabase";
+import { getCurrentUsername, clearCurrentUser, initInstantSession } from "./auth";
+import { db } from "./db";
 import { BooksPage } from "./pages/BooksPage";
 import { ChallengePage } from "./pages/ChallengePage";
 import { LoginPage } from "./pages/LoginPage";
@@ -31,24 +30,25 @@ export function App() {
   const basePath = getBasePathFromPathname(location.pathname);
   const isMobileShell = basePath !== "/web";
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => !!getCurrentUsername());
-  const [hasSharedInboxItems, setHasSharedInboxItems] = useState<boolean>(
-    () => loadSharedInbox().length > 0
-  );
   const [updateReady, setUpdateReady] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [applyUpdate, setApplyUpdate] = useState<((reloadPage?: boolean) => Promise<void>) | null>(null);
-  const isCloudSyncEnabled = isSupabaseConfigured();
   const appVersion = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
 
+  // Herstel InstantDB sessie bij app-start
   useEffect(() => {
-    (async () => {
-      const restored = await initSupabaseSession();
-      if (restored) {
-        await syncFromSupabase();
-        await pushLocalToSupabase();
-      }
-    })();
+    initInstantSession();
   }, []);
+
+  // Luister naar InstantDB auth state (inloggen / uitloggen via token)
+  const { user: instantUser } = db.useAuth();
+
+  // Sync login-staat met InstantDB auth
+  useEffect(() => {
+    if (instantUser) {
+      setIsLoggedIn(!!getCurrentUsername());
+    }
+  }, [instantUser]);
 
   useEffect(() => {
     const triggerUpdate = registerSW({
@@ -81,32 +81,12 @@ export function App() {
     return () => window.removeEventListener("bt_login", onLogin);
   }, []);
 
-  // Luister naar wijzigingen in de gedeelde inbox (Boekbuddy deelt boeken)
-  useEffect(() => {
-    function updateInboxFlag() {
-      setHasSharedInboxItems(loadSharedInbox().length > 0);
-    }
-
-    function onStorage(e: StorageEvent) {
-      if (e.key?.startsWith("bt_shared_inbox_v1")) {
-        updateInboxFlag();
-      }
-    }
-    function onInboxUpdated() {
-      updateInboxFlag();
-    }
-
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("bt_shared_inbox_updated", onInboxUpdated as EventListener);
-
-    // Init na eventuele Supabase-sync / localStorage-restore
-    updateInboxFlag();
-
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("bt_shared_inbox_updated", onInboxUpdated as EventListener);
-    };
-  }, []);
+  // Real-time inbox badge via InstantDB
+  const username = getCurrentUsername();
+  const { data: inboxData } = db.useQuery(
+    username ? { sharedInboxItems: { $: { where: { toUsername: username } } } } : null
+  );
+  const hasSharedInboxItems = (inboxData?.sharedInboxItems?.length ?? 0) > 0;
 
   const handleLogin = () => setIsLoggedIn(true);
 
@@ -161,11 +141,6 @@ export function App() {
             >
               {isUpdating ? "Bijwerken..." : "Vernieuwen"}
             </button>
-          </div>
-        )}
-        {isLoggedIn && !isCloudSyncEnabled && (
-          <div className="cloud-sync-warning">
-            Wijzigingen worden nu alleen op dit apparaat opgeslagen. Cloud‑sync staat uit.
           </div>
         )}
         <Routes>

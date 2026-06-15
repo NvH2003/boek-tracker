@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   compareWeekPlansForDisplay,
@@ -13,7 +13,7 @@ import {
   applyPerBookDailyReading
 } from "../challengeReadingProgress";
 import { useBasePath, withBase } from "../routing";
-import { loadBooks, loadChallenge, saveChallenge } from "../storage";
+import { useInstantData, saveChallenge } from "../storage";
 import { ReadingChallenge, WeeklyBookPlan, WeeklyChallenge } from "../types";
 
 /** Later weer inschakelen: "Geen tijd deze dag" bij dagelijkse leesdoelen */
@@ -43,10 +43,8 @@ function getDayOfYear(date: Date): number {
 export function ChallengePage() {
   const basePath = useBasePath();
   const isMobile = basePath !== "/web";
+  const { books, challenge, isLoading: dataLoading } = useInstantData();
 
-  const [challenge, setChallenge] = useState<ReadingChallenge | null>(() =>
-    loadChallenge()
-  );
   const [targetBooks, setTargetBooks] = useState<string>(
     () => challenge?.targetBooks.toString() ?? ""
   );
@@ -71,8 +69,6 @@ export function ChallengePage() {
     mode: "auto" | "manual";
     distribution: Record<string, number>;
   } | null>(null);
-
-  const books = useMemo(() => loadBooks(), []);
 
   type WeekDraftRow = {
     totalPages: string;
@@ -118,6 +114,23 @@ export function ChallengePage() {
   });
   const [weekSelectedBookIds, setWeekSelectedBookIds] = useState<string[]>([]);
   const [weekReadingDaysByBook, setWeekReadingDaysByBook] = useState<Record<string, string[]>>({});
+
+  // Sync form-velden wanneer challenge-data voor het eerst beschikbaar komt via InstantDB
+  const [challengeInitialized, setChallengeInitialized] = useState(false);
+  useEffect(() => {
+    if (challenge != null && !challengeInitialized) {
+      setTargetBooks(challenge.targetBooks.toString());
+      setYear(challenge.year.toString());
+      setWeeklyPages(challenge.weeklyPages?.toString() ?? "");
+      setStartDate(challenge.startDate ?? formatDate(new Date()));
+      setEndDate(challenge.endDate ?? formatDate(new Date()));
+      setStartPageInput(challenge.startPage != null ? String(challenge.startPage) : "");
+      setWeekChallengeStartDate(challenge.weeklyChallenge?.startDate ?? formatDate(new Date()));
+      setWeekChallengeEndDate(challenge.weeklyChallenge?.endDate ?? formatDate(new Date()));
+      setWeekBookCount(challenge.weeklyChallenge?.books.length || 1);
+      setChallengeInitialized(true);
+    }
+  }, [challenge, challengeInitialized]);
 
   function syncWeekBooksDraft(count: number) {
     setWeekBooksDraft((prev) => {
@@ -289,7 +302,6 @@ export function ChallengePage() {
     }
     
     saveChallenge(updated);
-    setChallenge(updated);
     setIsWeekModalOpen(false);
     setEditingWeekChallenge(null);
   }
@@ -305,7 +317,6 @@ export function ChallengePage() {
       weeklyPages: undefined
     };
     saveChallenge(updated);
-    setChallenge(updated);
   }
 
   function toggleWeekChallengeComplete() {
@@ -318,7 +329,6 @@ export function ChallengePage() {
       }
     };
     saveChallenge(updated);
-    setChallenge(updated);
   }
 
   const dailyGoals = useMemo(
@@ -400,7 +410,6 @@ export function ChallengePage() {
       startPage: startPageInput ? Number(startPageInput) : challenge?.startPage
     };
     saveChallenge(next);
-    setChallenge(next);
     setIsYearModalOpen(false);
   }
 
@@ -418,7 +427,6 @@ export function ChallengePage() {
     if (!challenge) return;
     const updated = applyLegacyDailyReading(challenge, date, cumulativePages);
     saveChallenge(updated);
-    setChallenge(updated);
   }
 
   /** Vul je cumulatieve bladzijde in voor één boek; sync alleen naar volgende dagen voor datzelfde boek. */
@@ -426,7 +434,6 @@ export function ChallengePage() {
     if (!challenge?.weeklyChallenge) return;
     const updated = applyPerBookDailyReading(challenge, date, bookId, cumulativePages);
     saveChallenge(updated);
-    setChallenge(updated);
   }
 
   function markBookDayComplete(
@@ -461,7 +468,6 @@ export function ChallengePage() {
 
   function clearChallenge() {
     saveChallenge(null);
-    setChallenge(null);
   }
 
   function openYearModalForNewYear() {
@@ -1851,7 +1857,6 @@ export function ChallengePage() {
                                         offDaysManual: Array.from(manualSet)
                                       };
                                       saveChallenge(updated);
-                                      setChallenge(updated);
                                       setOffdayModal(null);
                                     }}
                                   >
@@ -1891,7 +1896,6 @@ export function ChallengePage() {
                                             )
                                           };
                                           saveChallenge(updated);
-                                          setChallenge(updated);
                                           setOffdayModal(null);
                                         }}
                                       >

@@ -2,18 +2,14 @@ import { FormEvent, useMemo, useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Book, ReadStatus, Shelf } from "../types";
 import {
-  loadBooks,
-  loadChallenge,
-  loadShelves,
+  useInstantData,
   saveShelves,
   saveBooks,
-  subscribeBooks,
   addBookSnapshotsToMyLibrary
 } from "../storage";
 import { RatingStars } from "../components/RatingStars";
 import { useBasePath, withBase } from "../routing";
 import { formatGenresPreserveOrder, parseGenres, parseGenresPreserveOrder } from "../genreUtils";
-import { supabase, isSupabaseConfigured } from "../supabase";
 import { getGoogleBooksBrowserApiKey } from "../googleBooksBrowserKey";
 import { parseGoodreadsClipboardTextToPillLabels } from "../goodreadsClipboardGenres";
 
@@ -79,7 +75,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     }
     return "alle" as const;
   })();
-  const [books, setBooks] = useState<Book[]>(() => loadBooks());
+  const { books, shelves, challenge } = useInstantData();
   const [searchTitle, setSearchTitle] = useState("");
   const [searchAuthor, setSearchAuthor] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -111,7 +107,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     activeEl?.scrollIntoView({ block: "nearest" });
   }, [activeAuthorSuggestionIndex, showAuthorSuggestions]);
   const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
-  const challenge = useMemo(() => loadChallenge(), []);
   const [showManualBookModal, setShowManualBookModal] = useState(false);
   const [manualTitle, setManualTitle] = useState("");
   const [manualAuthors, setManualAuthors] = useState("");
@@ -126,7 +121,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   const [goodreadsPasteInputText, setGoodreadsPasteInputText] = useState<string>("");
   const goodreadsPasteTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [manualShelfIds, setManualShelfIds] = useState<string[]>([]);
-  const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
   const [addToShelfResult, setAddToShelfResult] = useState<SearchResult | null>(null);
   const [showAddToShelfModal, setShowAddToShelfModal] = useState(false);
   const [addToShelfSelectedShelfIds, setAddToShelfSelectedShelfIds] = useState<Set<string>>(new Set());
@@ -417,11 +411,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   );
   const cacheSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sync books tussen tabs/shells (web ↔ mobile)
-  useEffect(() => {
-    return subscribeBooks(setBooks);
-  }, []);
-
   // Hydrate search cache vanuit localStorage (1x)
   useEffect(() => {
     try {
@@ -608,7 +597,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   }
 
   function persist(newBooks: Book[]) {
-    setBooks(newBooks);
     saveBooks(newBooks);
   }
 
@@ -2973,13 +2961,13 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                           key={shelf.id}
                           type="button"
                           className="add-to-shelf-item"
-                          onClick={() => {
+                          onClick={async () => {
                             const snapshots = authorSearchResults
                               .filter((b) => selectedAuthorBookIds.has(b.id))
                               .map((b) => ({ title: b.title, authors: b.authors, coverUrl: b.coverUrl }));
                             const result = shelf.system
-                              ? addBookSnapshotsToMyLibrary(snapshots, { shelfId: shelf.id })
-                              : addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: shelf.id });
+                              ? await addBookSnapshotsToMyLibrary(snapshots, { shelfId: shelf.id }, books)
+                              : await addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: shelf.id }, books);
                             setToast(`${result.added} toegevoegd, ${result.skipped} stond/stonden al in je lijst.`);
                             window.setTimeout(() => setToast(""), 3000);
                             setShowAuthorBooksModal(false);
@@ -3003,17 +2991,16 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                           type="button"
                           className="add-to-shelf-item add-to-shelf-new-btn"
                           disabled={!authorNewShelfName.trim()}
-                          onClick={() => {
+                          onClick={async () => {
                             const name = authorNewShelfName.trim();
                             if (!name) return;
                             const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
                             const next = [...shelves, newShelf];
                             saveShelves(next);
-                            setShelves(next);
                             const snapshots = authorSearchResults
                               .filter((b) => selectedAuthorBookIds.has(b.id))
                               .map((b) => ({ title: b.title, authors: b.authors, coverUrl: b.coverUrl }));
-                            const result = addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: newShelf.id });
+                            const result = await addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: newShelf.id }, books);
                             setToast(`${result.added} toegevoegd, ${result.skipped} stond/stonden al in je lijst.`);
                             window.setTimeout(() => setToast(""), 3000);
                             setShowAuthorBooksModal(false);

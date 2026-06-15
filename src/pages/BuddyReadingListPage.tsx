@@ -1,7 +1,7 @@
 import React from "react";
 import { useParams, Link } from "react-router-dom";
 import { useState, useMemo, useEffect, useRef } from "react";
-import { loadBooksForUserAsync, loadFriends, loadShelves, saveShelves, addBookSnapshotsToMyLibrary } from "../storage";
+import { loadBooksForUserAsync, addBookSnapshotsToMyLibrary, useInstantData, saveShelves } from "../storage";
 import { useBasePath, withBase } from "../routing";
 import type { Book, ReadStatus } from "../types";
 
@@ -16,7 +16,7 @@ export function BuddyReadingListPage() {
   const { username: encodedUsername } = useParams<{ username: string }>();
   const basePath = useBasePath();
   const username = encodedUsername ? decodeURIComponent(encodedUsername) : null;
-  const friends = useMemo(() => loadFriends(), []);
+  const { friends, shelves, books: myBooks } = useInstantData();
   const isFriend = username && friends.some((f) => f.toLowerCase() === username.toLowerCase());
   const [books, setBooks] = useState<Awaited<ReturnType<typeof loadBooksForUserAsync>>>([]);
   const [booksLoading, setBooksLoading] = useState(true);
@@ -42,7 +42,7 @@ export function BuddyReadingListPage() {
   const [showShelfPicker, setShowShelfPicker] = useState(false);
   const [addResult, setAddResult] = useState<{ added: number; skipped: number } | null>(null);
   const [toast, setToast] = useState("");
-  const [shelves, setShelves] = useState(() => loadShelves());
+  // shelves comes from useInstantData above
   const [newShelfName, setNewShelfName] = useState("");
   const [selectionBarPosition, setSelectionBarPosition] = useState({ bottom: 96, leftPercent: 50 });
   const selectionBarDragRef = useRef<{ startY: number; startBottom: number; startX: number; startLeft: number } | null>(null);
@@ -160,10 +160,10 @@ export function BuddyReadingListPage() {
       .map((b) => ({ title: b.title, authors: b.authors, coverUrl: b.coverUrl }));
   }
 
-  function handleAddToTbr() {
+  async function handleAddToTbr() {
     const snapshots = getSelectedSnapshots();
     if (!snapshots.length) return;
-    const result = addBookSnapshotsToMyLibrary(snapshots, { status: "wil-ik-lezen" });
+    const result = await addBookSnapshotsToMyLibrary(snapshots, { status: "wil-ik-lezen" }, myBooks);
     setAddResult(result);
     setSelectedBookIds(new Set());
     setSelectionMode(false);
@@ -177,13 +177,13 @@ export function BuddyReadingListPage() {
 
   const SYSTEM_SHELF_IDS = ["wil-ik-lezen", "aan-het-lezen", "gelezen"];
 
-  function handleAddToShelf(shelfId: string) {
+  async function handleAddToShelf(shelfId: string) {
     const snapshots = getSelectedSnapshots();
     if (!snapshots.length) return;
     const options = SYSTEM_SHELF_IDS.includes(shelfId)
       ? { shelfId }
       : { status: "geen-status" as const, shelfId };
-    const result = addBookSnapshotsToMyLibrary(snapshots, options);
+    const result = await addBookSnapshotsToMyLibrary(snapshots, options, myBooks);
     setAddResult(result);
     setSelectedBookIds(new Set());
     setShowShelfPicker(false);
@@ -606,7 +606,6 @@ export function BuddyReadingListPage() {
                       const newShelf = { id: `shelf-${Date.now()}`, name };
                       const next = [...shelves, newShelf];
                       saveShelves(next);
-                      setShelves(next);
                       handleAddToShelf(newShelf.id);
                       setNewShelfName("");
                     }}

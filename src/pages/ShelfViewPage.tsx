@@ -1,6 +1,6 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { Book, ReadStatus, Shelf } from "../types";
-import { loadBooks, loadShelves, saveShelves, saveBooks, subscribeBooks, loadFriends, shareWithFriend, loadShelfViewSettings, saveShelfViewSettings } from "../storage";
+import { useInstantData, saveShelves, saveBooks, shareWithFriend, saveShelfViewSettings } from "../storage";
 import { useBasePath, withBase } from "../routing";
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { parseGenresPreserveOrder, parseGenres, formatGenres, formatGenresPreserveOrder } from "../genreUtils";
@@ -89,21 +89,22 @@ export function ShelfViewPage() {
   const { shelfId } = useParams<{ shelfId: string }>();
   const basePath = useBasePath();
   const navigate = useNavigate();
-  const [books, setBooks] = useState<Book[]>(() => loadBooks());
-  const [shelves, setShelves] = useState<Shelf[]>(() => loadShelves());
+  const { books, shelves, friends, shelfViewSettings } = useInstantData();
   const [toast, setToast] = useState<string>("");
-  const [sortRulesByShelf, setSortRulesByShelf] = useState<Record<string, string[]>>(() => loadShelfViewSettings().sortRulesByShelf);
-  const [groupModeByShelf, setGroupModeByShelf] = useState<Record<string, ShelfGroupMode>>(() => {
-    const s = loadShelfViewSettings().groupModeByShelf as Record<string, ShelfGroupMode>;
-    return s ?? {};
-  });
-  const [groupSortRules, setGroupSortRules] = useState<Record<string, string[]>>(() => loadShelfViewSettings().groupSortRules);
+  const [sortRulesByShelf, setSortRulesByShelf] = useState<Record<string, string[]>>(shelfViewSettings.sortRulesByShelf);
+  const [groupModeByShelf, setGroupModeByShelf] = useState<Record<string, ShelfGroupMode>>(
+    (shelfViewSettings.groupModeByShelf as Record<string, ShelfGroupMode>) ?? {}
+  );
+  const [groupSortRules, setGroupSortRules] = useState<Record<string, string[]>>(shelfViewSettings.groupSortRules);
   /** "shelf" = main sort popup (no grouping), or groupId for that boekenkast's sort popup */
   const [sortPopupTarget, setSortPopupTarget] = useState<"shelf" | string | null>(null);
 
+  // Sync shelfViewSettings when loaded from InstantDB
   useEffect(() => {
-    return subscribeBooks(setBooks);
-  }, []);
+    setSortRulesByShelf(shelfViewSettings.sortRulesByShelf);
+    setGroupModeByShelf((shelfViewSettings.groupModeByShelf as Record<string, ShelfGroupMode>) ?? {});
+    setGroupSortRules(shelfViewSettings.groupSortRules);
+  }, [shelfViewSettings]);
 
   useEffect(() => {
     saveShelfViewSettings({
@@ -252,7 +253,6 @@ export function ShelfViewPage() {
   }
 
   function persist(next: Book[]) {
-    setBooks(next);
     saveBooks(next);
     // Als er geen geselecteerde boeken meer over zijn, verlaat de selectiemodus.
     setSelectedBookIds((prev) => {
@@ -343,7 +343,7 @@ export function ShelfViewPage() {
     window.setTimeout(() => setToast(""), 2500);
   }
 
-  function shareSelectedWithFriend(friend: string) {
+  async function shareSelectedWithFriend(friend: string) {
     const ids = Array.from(selectedBookIds);
     const selected = books.filter((b) => ids.includes(b.id));
     if (selected.length === 0) return;
@@ -353,7 +353,7 @@ export function ShelfViewPage() {
       coverUrl: b.coverUrl,
       seriesName: b.seriesName
     }));
-    const result = shareWithFriend(friend, snapshots, shelf.name);
+    const result = await shareWithFriend(friend, snapshots, shelf?.name, friends);
     if (result.ok) {
       setSelectedBookIds(new Set());
       setShowShareSelectedModal(false);
@@ -777,19 +777,19 @@ export function ShelfViewPage() {
             </p>
             {shareShelfError && <p className="form-error">{shareShelfError}</p>}
             <ul className="add-to-shelf-list">
-              {loadFriends().map((friend) => (
+              {friends.map((friend) => (
                 <li key={friend}>
                   <button
                     type="button"
                     className="add-to-shelf-item"
-                    onClick={() => {
+                    onClick={async () => {
                       const snapshots = shelfBooks.map((b) => ({
                         title: b.title,
                         authors: b.authors,
                         coverUrl: b.coverUrl,
                         seriesName: b.seriesName
                       }));
-                      const result = shareWithFriend(friend, snapshots, shelf.name);
+                      const result = await shareWithFriend(friend, snapshots, shelf?.name, friends);
                       if (result.ok) {
                         setShowShareShelfModal(false);
                         setShareShelfError("");
@@ -803,7 +803,7 @@ export function ShelfViewPage() {
                 </li>
               ))}
             </ul>
-            {loadFriends().length === 0 && (
+            {friends.length === 0 && (
               <p className="modal-intro">Je hebt nog geen Boekbuddies. Voeg eerst vrienden toe via Profiel.</p>
             )}
             <button
@@ -1133,9 +1133,7 @@ export function ShelfViewPage() {
                   const name = newShelfName.trim();
                   if (!name) return;
                   const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
-                  const next = [...shelves, newShelf];
-                  saveShelves(next);
-                  setShelves(next);
+                  saveShelves([...shelves, newShelf]);
                   addSelectedBooksToShelf(newShelf.id);
                   setNewShelfName("");
                 }}
@@ -1237,7 +1235,7 @@ export function ShelfViewPage() {
             </p>
             {shareSelectedError && <p className="form-error">{shareSelectedError}</p>}
             <ul className="add-to-shelf-list">
-              {loadFriends().map((friend) => (
+              {friends.map((friend) => (
                 <li key={friend}>
                   <button
                     type="button"
@@ -1249,7 +1247,7 @@ export function ShelfViewPage() {
                 </li>
               ))}
             </ul>
-            {loadFriends().length === 0 && (
+            {friends.length === 0 && (
               <p className="modal-intro">
                 Je hebt nog geen Boekbuddies. Voeg eerst vrienden toe via Profiel.
               </p>
