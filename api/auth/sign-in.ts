@@ -41,9 +41,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: "Gebruikersnaam of wachtwoord klopt niet." });
   }
 
-  const hash = await sha256Hex(password);
-  if (hash !== profile.passwordHash) {
-    return res.status(401).json({ error: "Gebruikersnaam of wachtwoord klopt niet." });
+  // Als de hash leeg is (gemigreerde gebruiker zonder opgeslagen hash):
+  // sla het opgegeven wachtwoord op als nieuw wachtwoord (eenmalige migratie).
+  if (!profile.passwordHash) {
+    const newHash = await sha256Hex(password);
+    await db.transact([
+      db.tx.profiles[profile.id].update({ passwordHash: newHash }),
+    ]);
+  } else {
+    const hash = await sha256Hex(password);
+    if (hash !== profile.passwordHash) {
+      return res.status(401).json({ error: "Gebruikersnaam of wachtwoord klopt niet." });
+    }
   }
 
   // Maak een InstantDB auth token aan voor deze gebruiker
