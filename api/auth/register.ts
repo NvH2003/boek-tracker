@@ -1,11 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { init, id as instantId } from "@instantdb/admin";
+import { id as instantId } from "@instantdb/admin";
 import { createHash } from "crypto";
-
-const db = init({
-  appId: process.env.INSTANT_APP_ID ?? process.env.VITE_INSTANT_APP_ID ?? "",
-  adminToken: process.env.INSTANT_ADMIN_TOKEN ?? "",
-});
+import { getAdminDb } from "../instant-admin";
 
 function sha256Hex(text: string): string {
   return createHash("sha256").update(text).digest("hex");
@@ -13,6 +9,8 @@ function sha256Hex(text: string): string {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const db = getAdminDb();
 
   const { username, password } = req.body as { username?: string; password?: string };
   const trimmed = (username ?? "").trim();

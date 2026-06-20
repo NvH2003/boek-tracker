@@ -1,11 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { init } from "@instantdb/admin";
 import { createHash } from "crypto";
-
-const db = init({
-  appId: process.env.INSTANT_APP_ID ?? process.env.VITE_INSTANT_APP_ID ?? "",
-  adminToken: process.env.INSTANT_ADMIN_TOKEN ?? "",
-});
+import { getAdminDb, resetAdminDb } from "../instant-admin";
+import { withInstantRetry } from "../instant-retry";
 
 function sha256Hex(text: string): string {
   return createHash("sha256").update(text).digest("hex");
@@ -32,7 +28,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Haal alle profielen op en doe case-insensitive match in JS
   // (InstantDB LIKE is case-sensitive, usernames zijn opgeslagen met originele casing)
-  const result = await db.query({ profiles: {} });
+  const result = await withInstantRetry(async () => {
+    try {
+      return await getAdminDb().query({ profiles: {} });
+    } catch (err) {
+      resetAdminDb();
+      throw err;
+    }
+  });
 
   const profiles = (result.profiles ?? []) as Array<{
     id: string;
@@ -52,9 +55,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // sla het opgegeven wachtwoord op als nieuw wachtwoord (eenmalige migratie).
   if (!profile.passwordHash) {
     const newHash = await sha256Hex(password);
-    await db.transact([
-      db.tx.profiles[profile.id].update({ passwordHash: newHash }),
-    ]);
+    await withInstantRetry(async () => {
+      try {
+        await getAdminDb().transact([
+          getAdminDb().tx.profiles[profile.id].update({ passwordHash: newHash }),
+        ]);
+      } catch (err) {
+        resetAdminDb();
+        throw err;
+      }
+    });
   } else {
     const hash = await sha256Hex(password);
     if (hash !== profile.passwordHash) {
@@ -63,11 +73,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Maak een InstantDB auth token aan voor deze gebruiker
-  const token = await db.auth.createToken(fakeEmail);
+  const token = await withInstantRetry(async () => {
+    try {
+      return await getAdminDb().auth.createToken(fakeEmail);
+    } catch (err) {
+      resetAdminDb();
+      throw err;
+    }
+  });
 
   return res.status(200).json({ token, username: profile.username });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (msg === "fetch failed") {
+      return res.status(503).json({
+        error: "Verbinding met InstantDB mislukt. Probeer het nog eens of controleer je internet/firewall.",
+      });
+    }
     return res.status(500).json({ error: `Server error: ${msg}` });
   }
 }

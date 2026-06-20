@@ -89,7 +89,7 @@ export function ShelfViewPage() {
   const { shelfId } = useParams<{ shelfId: string }>();
   const basePath = useBasePath();
   const navigate = useNavigate();
-  const { books, shelves, friends, shelfViewSettings } = useInstantData();
+  const { books, shelves, friends, shelfViewSettings, isLoading } = useInstantData();
   const [toast, setToast] = useState<string>("");
   const [sortRulesByShelf, setSortRulesByShelf] = useState<Record<string, string[]>>(shelfViewSettings.sortRulesByShelf);
   const [groupModeByShelf, setGroupModeByShelf] = useState<Record<string, ShelfGroupMode>>(
@@ -369,23 +369,6 @@ export function ShelfViewPage() {
     }
   }
 
-  if (!shelfId || !shelf) {
-    return (
-      <div className="page shelf-view-page">
-        <p>Boekenkast niet gevonden.</p>
-        <Link to={withBase(basePath, "/planken")} className="link-button">
-          Terug naar boekenkasten
-        </Link>
-      </div>
-    );
-  }
-
-  function goToBook(bookId: string) {
-    const from = shelfId ? `?from=boekenkast&shelfId=${shelfId}` : "";
-    const encodedBookId = encodeURIComponent(bookId);
-    navigate(withBase(basePath, `/boek/${encodedBookId}${from}`));
-  }
-
   const groupedBySeries = useMemo(() => {
     if (currentGroupMode !== "series") return null;
     if (shelfBooks.length === 0) return null;
@@ -461,9 +444,7 @@ export function ShelfViewPage() {
     const NO_GENRE_KEY = "__no_genre";
 
     shelfBooks.forEach((b) => {
-      // We gebruiken preserve-order zodat het "eerste genre" ook echt het primaire genre is.
       const genres = parseGenresPreserveOrder(b.genre);
-      // Als een boek meerdere genres heeft: we kiezen het "primaire" genre (eerste uit parseGenres).
       const key = genres[0] ?? NO_GENRE_KEY;
       const arr = groups.get(key) ?? [];
       arr.push(b);
@@ -482,6 +463,42 @@ export function ShelfViewPage() {
         return a.label.localeCompare(b.label);
       });
   }, [shelfBooks, currentGroupMode]);
+
+  if (!shelfId) {
+    return (
+      <div className="page shelf-view-page">
+        <p>Boekenkast niet gevonden.</p>
+        <Link to={withBase(basePath, "/planken")} className="link-button">
+          Terug naar boekenkasten
+        </Link>
+      </div>
+    );
+  }
+
+  if (isLoading && !shelf) {
+    return (
+      <div className="page shelf-view-page">
+        <p>Boekenkast laden…</p>
+      </div>
+    );
+  }
+
+  if (!shelf) {
+    return (
+      <div className="page shelf-view-page">
+        <p>Boekenkast niet gevonden.</p>
+        <Link to={withBase(basePath, "/profiel")} className="link-button">
+          Terug naar profiel
+        </Link>
+      </div>
+    );
+  }
+
+  function goToBook(bookId: string) {
+    const from = shelfId ? `?from=boekenkast&shelfId=${shelfId}` : "";
+    const encodedBookId = encodeURIComponent(bookId);
+    navigate(withBase(basePath, `/boek/${encodedBookId}${from}`));
+  }
 
   function renderBookcaseBook(book: Book) {
     const isSelected = selectedBookIds.has(book.id);

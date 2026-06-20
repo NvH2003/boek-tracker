@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
+import { apiDevPlugin } from "./scripts/vite-api-dev-plugin";
 
 export default defineConfig(({ mode }) => {
   // Expliciet .env lezen (naast import.meta.env); lost op als de key wel in .env staat maar de client leeg blijft.
@@ -20,6 +21,7 @@ export default defineConfig(({ mode }) => {
       __BT_GOOGLE_BOOKS_KEY__: JSON.stringify(googleBooksKey),
     },
     plugins: [
+      apiDevPlugin(),
       react(),
       VitePWA({
       registerType: "autoUpdate",
@@ -50,6 +52,7 @@ export default defineConfig(({ mode }) => {
     ],
     server: {
       port: 5173,
+      strictPort: true,
     },
   };
 });

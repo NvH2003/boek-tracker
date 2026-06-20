@@ -48,10 +48,37 @@ export async function verifyLogin(
     "/api/auth/sign-in",
     { username, password }
   );
-  if (!result.ok) return { ok: false, error: result.error };
-  setCurrentUser(result.data.username);
-  await db.auth.signInWithToken(result.data.token);
+  if (!result.ok) {
+    const msg = result.error;
+    if (msg.startsWith("Server error: fetch failed") || msg.includes("InstantDB mislukt")) {
+      return { ok: false, error: "Verbinding met InstantDB mislukt. Probeer het nog eens." };
+    }
+    return { ok: false, error: msg };
+  }
+  try {
+    setCurrentUser(result.data.username);
+    await signInWithRetry(result.data.token);
+  } catch {
+    clearCurrentUser();
+    return { ok: false, error: "Kon geen verbinding maken met InstantDB. Probeer opnieuw of controleer je internet." };
+  }
   return { ok: true };
+}
+
+async function signInWithRetry(token: string, attempts = 4): Promise<void> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await db.auth.signInWithToken(token);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 300 * (i + 1)));
+      }
+    }
+  }
+  throw lastErr;
 }
 
 export async function authDebug(): Promise<string> {
@@ -83,8 +110,13 @@ export async function createAccount(
   );
   if (!result.ok) return { ok: false, error: result.error };
 
-  setCurrentUser(result.data.username);
-  await db.auth.signInWithToken(result.data.token);
+  try {
+    setCurrentUser(result.data.username);
+    await signInWithRetry(result.data.token);
+  } catch {
+    clearCurrentUser();
+    return { ok: false, error: "Kon geen verbinding maken met InstantDB. Probeer opnieuw of controleer je internet." };
+  }
   return { ok: true };
 }
 
