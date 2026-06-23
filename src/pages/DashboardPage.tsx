@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useInstantData, saveShelves, saveChallenge, saveBooks, shareWithFriend } from "../storage";
 import { Book, Shelf, ReadStatus, ReadingChallenge } from "../types";
 import { useBasePath, withBase } from "../routing";
@@ -139,6 +139,7 @@ type DashboardMode = "toggle" | "desktop" | "mobile";
 
 export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
   const basePath = useBasePath();
+  const navigate = useNavigate();
   const { books, shelves, challenge, friends } = useInstantData();
   const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set());
   const [dashboardView, setDashboardView] = useState<"desktop" | "mobile">(
@@ -244,6 +245,10 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
     }
   }, [mode]);
   
+  function goToBookDetails(bookId: string) {
+    navigate(withBase(basePath, `/boek/${encodeURIComponent(bookId)}?from=boeken`));
+  }
+
   function openBookInfo(book: Book) {
     setSelectedBook(book);
     setEditingPageCount(book.pageCount != null ? String(book.pageCount) : "");
@@ -1049,7 +1054,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                             toggleBookSelected(book.id);
                             return;
                           }
-                          openBookInfo(book);
+                          goToBookDetails(book.id);
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
@@ -1111,7 +1116,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  openDetailPopup(book.id);
+                                  goToBookDetails(book.id);
                                 }}
                               >
                                 Details
@@ -1137,7 +1142,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  openDetailPopup(book.id);
+                                  goToBookDetails(book.id);
                                 }}
                               >
                                 Details
@@ -1321,7 +1326,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                             toggleBookSelected(book.id);
                             return;
                           }
-                          openBookInfo(book);
+                          goToBookDetails(book.id);
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
@@ -1381,7 +1386,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              openDetailPopup(book.id);
+                              goToBookDetails(book.id);
                             }}
                           >
                             Details
@@ -1594,7 +1599,7 @@ export function DashboardPage({ mode = "toggle" }: { mode?: DashboardMode }) {
                           toggleBookSelected(book.id);
                           return;
                         }
-                        openBookInfo(book);
+                        goToBookDetails(book.id);
                       }}
                       onContextMenu={(e) => {
                         e.preventDefault();

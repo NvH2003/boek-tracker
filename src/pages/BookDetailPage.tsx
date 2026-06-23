@@ -159,6 +159,22 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   const from = search.get("from");
   const fromShelfId = search.get("shelfId");
 
+  function navigateBack() {
+    if (isModal) {
+      onClose?.();
+      return;
+    }
+    if (from === "bibliotheek") {
+      navigate(withBase(basePath, "/bibliotheek"));
+    } else if (from === "boeken") {
+      navigate(withBase(basePath, "/boeken"));
+    } else if (from === "boekenkast" && fromShelfId) {
+      navigate(withBase(basePath, `/plank/${fromShelfId}`));
+    } else {
+      navigate(withBase(basePath, "/boeken"));
+    }
+  }
+
   const book = id ? books.find((b) => b.id === id) : undefined;
 
   const [title, setTitle] = useState(book?.title ?? "");
@@ -571,17 +587,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         <button
           type="button"
           className="secondary-button"
-          onClick={() => {
-            if (isModal) {
-              onClose?.();
-            } else if (from === "bibliotheek") {
-              navigate(withBase(basePath, "/bibliotheek"));
-            } else if (from === "boekenkast" && fromShelfId) {
-              navigate(withBase(basePath, `/plank/${fromShelfId}`));
-            } else {
-              navigate(withBase(basePath, "/boeken"));
-            }
-          }}
+          onClick={navigateBack}
         >
           Terug naar overzicht
         </button>
@@ -731,15 +737,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
         : b
     );
     persist(updatedBooks);
-    if (isModal) {
-      onClose?.();
-    } else if (from === "bibliotheek") {
-      navigate(withBase(basePath, "/bibliotheek"));
-    } else if (from === "boekenkast" && fromShelfId) {
-      navigate(withBase(basePath, `/plank/${fromShelfId}`));
-    } else {
-      navigate(withBase(basePath, "/boeken"));
-    }
+    navigateBack();
   }
 
   const STATUS_COLORS: Record<ReadStatus, string> = {
@@ -754,13 +752,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
 
       {/* ─── Navigatie ──────────────────────────────────────────────── */}
       <div className="bd-nav">
-        <button type="button" className="bd-back-btn"
-          onClick={() => {
-            if (isModal) { onClose?.(); return; }
-            if (from === "bibliotheek") navigate(withBase(basePath, "/bibliotheek"));
-            else if (from === "boekenkast" && fromShelfId) navigate(withBase(basePath, `/plank/${fromShelfId}`));
-            else navigate(withBase(basePath, "/bibliotheek"));
-          }}>
+        <button type="button" className="bd-back-btn" onClick={navigateBack}>
           ← {isModal ? "Sluiten" : "Terug"}
         </button>
       </div>
@@ -1155,8 +1147,7 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
                 onClick={() => {
                   const updated = books.filter((b) => b.id !== book.id);
                   saveBooks(updated);
-                  if (from === "bibliotheek") navigate(withBase(basePath, "/bibliotheek"));
-                  else navigate(withBase(basePath, "/boeken"));
+                  navigateBack();
                 }}
               >
                 Verwijderen
