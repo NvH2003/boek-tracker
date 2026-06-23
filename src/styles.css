@@ -2494,7 +2494,9 @@ button.genre-assist-inline-btn {
 /* Huidige dag: blauw */
 .daily-goal-item-compact.today {
   border-color: rgba(59, 130, 246, 0.7);
-  background: rgba(59, 130, 246, 0.15);
+  border-left: 3px solid #3b82f6;
+  background: rgba(59, 130, 246, 0.08);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2);
 }
 
 /* Behaald doel: groen (overschrijft blauw als beide van toepassing) */
@@ -3154,6 +3156,114 @@ button.genre-assist-inline-btn {
   background: rgba(15, 23, 42, 0.8);
   color: #e5e7eb;
   font-size: 0.85rem;
+}
+
+/* Weekchallenge: per-boek voortgang in samenvatting */
+.challenge-book-progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+}
+
+.challenge-book-progress-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.challenge-book-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.challenge-book-progress-title {
+  font-weight: 600;
+  color: #e5e7eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.challenge-book-progress-count {
+  flex-shrink: 0;
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.challenge-book-progress-bar {
+  height: 6px;
+  background: rgba(15, 23, 42, 0.8);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.challenge-book-progress-fill {
+  height: 100%;
+  background: linear-gradient(to right, #6366f1, #8b5cf6);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+/* Weekchallenge: vandaag-kaart */
+.challenge-today-card {
+  margin: 1rem 0;
+  padding: 1rem 1.1rem;
+  border-radius: 0.85rem;
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.2),
+    rgba(99, 102, 241, 0.12)
+  );
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.12);
+}
+
+.challenge-today-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #93c5fd;
+  margin-bottom: 0.65rem;
+}
+
+.challenge-today-book-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.5rem;
+}
+
+.challenge-today-book-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #f1f5f9;
+}
+
+.challenge-today-book-target {
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+
+.challenge-today-session-btn {
+  margin-top: 0.75rem;
+  width: 100%;
+}
+
+/* Multi-boek dag badge */
+.multi-book-day-badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: rgba(139, 92, 246, 0.25);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.4);
 }
 
 .modal-summary {
@@ -7036,28 +7146,29 @@ button.genre-assist-inline-btn {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.65);
-  z-index: 50;
+  z-index: 200;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.25rem;
+  padding: max(1rem, env(safe-area-inset-top)) 1rem max(5rem, calc(3.5rem + env(safe-area-inset-bottom))) 1rem;
 }
 
 .lib-sheet {
+  position: relative;
   background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
   border: 1px solid rgba(71, 85, 105, 0.5);
   border-radius: 1.25rem;
-  width: 100%;
-  max-width: 560px;
-  max-height: min(75vh, 520px);
+  width: min(100%, 560px);
+  max-height: min(70vh, 520px);
   display: flex;
   flex-direction: column;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
   animation: lib-sheet-fade-in 0.18s ease;
+  margin: auto;
 }
 
 @keyframes lib-sheet-fade-in {
-  from { opacity: 0; transform: translateY(16px); }
+  from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 

@@ -1,4 +1,5 @@
 import { FormEvent, useMemo, useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Book, ReadStatus, Shelf } from "../types";
 import {
@@ -2944,7 +2945,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                 const progress = getChallengeProgress(book.id);
                 const showDailyGoalProgress =
                   book.status === "aan-het-lezen" && progress && progress.total > 0;
-                void showDailyGoalProgress;
                 return (
                 <article
                   key={book.id}
@@ -2991,6 +2991,22 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                       </button>
                     </div>
                   </div>
+                  {showDailyGoalProgress && progress && (
+                    <div className="book-card-challenge-progress">
+                      <span className="book-card-challenge-label">Weekchallenge</span>
+                      <div className="book-card-challenge-bar-wrap">
+                        <div
+                          className="book-card-challenge-bar-fill"
+                          style={{
+                            width: `${Math.min(100, (progress.current / progress.total) * 100)}%`
+                          }}
+                        />
+                      </div>
+                      <span className="book-card-challenge-pages">
+                        {progress.current}/{progress.total} blz
+                      </span>
+                    </div>
+                  )}
                   {libGenreFilter.length > 0 && parseGenres(book.genre).length > 0 && (
                     <div className="book-card-genres" onClick={(e) => e.stopPropagation()}>
                       {parseGenres(book.genre).map((g) => (
@@ -3035,6 +3051,8 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
 
       {toast && <div className="toast">{toast}</div>}
 
+      {createPortal(
+        <>
       {/* ─── Auteur sheet ─────────────────────────────────────────────────── */}
       {showAuthorSheet && (
         <div className="lib-sheet-overlay" onClick={() => setShowAuthorSheet(false)}>
@@ -3321,6 +3339,9 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
             )}
           </div>
         </div>
+      )}
+        </>,
+        document.body
       )}
 
       {showAddToShelfModal && addToShelfResult && (

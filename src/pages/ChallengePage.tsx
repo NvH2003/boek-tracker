@@ -183,6 +183,18 @@ export function ChallengePage() {
         }, {} as Record<string, string>),
         selectedDays: Object.keys(p.dailyPages).filter(d => p.dailyPages[d] > 0)
       })));
+      setWeekSelectedBookIds(
+        editChallenge.books
+          .map((p) => p.bookId)
+          .filter((id) => books.some((b) => b.id === id))
+      );
+      const daysByBook: Record<string, string[]> = {};
+      editChallenge.books.forEach((p) => {
+        if (books.some((b) => b.id === p.bookId)) {
+          daysByBook[p.bookId] = Object.keys(p.dailyPages).filter((d) => p.dailyPages[d] > 0);
+        }
+      });
+      setWeekReadingDaysByBook(daysByBook);
     } else {
       const todayDate = new Date();
       const today = formatDate(todayDate);
@@ -466,6 +478,50 @@ export function ChallengePage() {
     return getBookCumulativeFromChallenge(challenge, date, bookId);
   }
 
+  function getPlanReadingProgress(plan: WeeklyBookPlan) {
+    const perBook = challenge?.dailyReadingPerBook || {};
+    let current = 0;
+    for (const dayRecord of Object.values(perBook)) {
+      const val = dayRecord[plan.bookId];
+      if (typeof val === "number" && val > current) current = val;
+    }
+    const total = plan.totalPages || 0;
+    const pct = total > 0 ? Math.min(100, (current / total) * 100) : 0;
+    return { current, total, pct };
+  }
+
+  function renderWeekBookProgressList(wc: WeeklyChallenge) {
+    const sortedPlans = [...wc.books].sort((a, b) =>
+      compareWeekPlansForDisplay(a, b, books)
+    );
+    return (
+      <div className="challenge-book-progress-list">
+        {sortedPlans.map((plan) => {
+          const book = books.find((b) => b.id === plan.bookId);
+          const { current, total, pct } = getPlanReadingProgress(plan);
+          return (
+            <div key={plan.bookId} className="challenge-book-progress-row">
+              <div className="challenge-book-progress-header">
+                <span className="challenge-book-progress-title">
+                  {book?.title ?? plan.bookId}
+                </span>
+                <span className="challenge-book-progress-count">
+                  {current}/{total} blz
+                </span>
+              </div>
+              <div className="challenge-book-progress-bar">
+                <div
+                  className="challenge-book-progress-fill"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   function clearChallenge() {
     saveChallenge(null);
   }
@@ -715,6 +771,7 @@ export function ChallengePage() {
                         </p>
                       );
                     })()}
+                    {renderWeekBookProgressList(challenge.weeklyChallenge!)}
                     <div className="challenge-mobile-summary-actions">
                       <button type="button" className="secondary-button" onClick={() => openWeekModal(challenge.weeklyChallenge!)}>
                         Bewerken
@@ -817,6 +874,7 @@ export function ChallengePage() {
                   </p>
                 );
               })()}
+              {renderWeekBookProgressList(challenge.weeklyChallenge!)}
               <div className="weekchallenge-actions">
                 <button
                   type="button"
@@ -917,380 +975,150 @@ export function ChallengePage() {
         return (
           <div className="modal-backdrop">
             <div className="modal weekchallenge-modal">
-              {isMobile ? (
-                <>
-                  <h3>Nieuwe weekchallenge</h3>
-                  <p className="modal-intro">
-                    Kies je boek(en), periode en leesdagen. We verdelen het totaal aantal
-                    pagina&apos;s gelijk over alle leesdagen. Je leest eerst het ene boek uit;
-                    als je op een dag dat boek afrondt, ga je dezelfde dag door met het volgende boek.
-                  </p>
-                  <div className="form-field-inline">
-                    <label className="form-field">
-                      <span>Startdatum</span>
-                      <input
-                        type="date"
-                        value={weekChallengeStartDate}
-                        onChange={(e) => {
-                          setWeekChallengeStartDate(e.target.value);
-                        }}
-                      />
-                    </label>
-                    <label className="form-field">
-                      <span>Einddatum</span>
-                      <input
-                        type="date"
-                        value={weekChallengeEndDate}
-                        min={weekChallengeStartDate}
-                        onChange={(e) => {
-                          setWeekChallengeEndDate(e.target.value);
-                        }}
-                      />
-                    </label>
-                  </div>
-                  <div className="form-field">
-                    <span>Boek(en)</span>
-                    <div className="weekchallenge-mobile-book-list">
-                      {(() => {
-                        const candidateBooks = books.filter(
-                          (b) =>
-                            b.status === "aan-het-lezen" || b.status === "wil-ik-lezen"
-                        );
-                        const currentlyReading = candidateBooks
-                          .filter((b) => b.status === "aan-het-lezen")
-                          .sort((a, b) => a.title.localeCompare(b.title));
-                        const tbrBooks = candidateBooks
-                          .filter((b) => b.status === "wil-ik-lezen")
-                          .sort((a, b) => {
-                            const aOrder = a.order ?? Number.MAX_SAFE_INTEGER;
-                            const bOrder = b.order ?? Number.MAX_SAFE_INTEGER;
-                            if (aOrder !== bOrder) return aOrder - bOrder;
-                            return a.title.localeCompare(b.title);
-                          });
-                        const selectable = [...currentlyReading, ...tbrBooks];
-                        if (!selectable.length) {
-                          return (
-                            <p className="page-intro-small">
-                              Je hebt nog geen boeken op je leeslijst of TBR.
-                            </p>
-                          );
-                        }
-                        return selectable.map((book) => {
-                          const isSelected = weekSelectedBookIds.includes(book.id);
-                          const pages = book.pageCount;
-                          return (
-                            <button
-                              key={book.id}
-                              type="button"
-                              className={`weekchallenge-mobile-book-pill ${
-                                isSelected ? "selected" : ""
-                              }`}
-                              onClick={() => {
-                                setWeekSelectedBookIds((prev) =>
-                                  isSelected
-                                    ? prev.filter((id) => id !== book.id)
-                                    : [...prev, book.id]
-                                );
-                              }}
-                            >
-                              <div className="weekchallenge-mobile-book-pill-inner">
-                                <div className="weekchallenge-mobile-book-cover">
-                                  {book.coverUrl ? (
-                                    <img src={book.coverUrl} alt={book.title} />
-                                  ) : (
-                                    <div className="weekchallenge-mobile-book-cover-placeholder">
-                                      {book.title.charAt(0).toUpperCase()}
-                                    </div>
-                                  )}
+              <h3>
+                {editingWeekChallenge ? "Weekchallenge bewerken" : "Nieuwe weekchallenge"}
+              </h3>
+              <p className="modal-intro">
+                Kies je boek(en), periode en leesdagen. We verdelen het totaal aantal
+                pagina&apos;s gelijk over alle leesdagen. Je leest eerst het ene boek uit;
+                als je op een dag dat boek afrondt, ga je dezelfde dag door met het volgende boek.
+              </p>
+              <div className="form-field-inline">
+                <label className="form-field">
+                  <span>Startdatum</span>
+                  <input
+                    type="date"
+                    value={weekChallengeStartDate}
+                    onChange={(e) => {
+                      setWeekChallengeStartDate(e.target.value);
+                    }}
+                  />
+                </label>
+                <label className="form-field">
+                  <span>Einddatum</span>
+                  <input
+                    type="date"
+                    value={weekChallengeEndDate}
+                    min={weekChallengeStartDate}
+                    onChange={(e) => {
+                      setWeekChallengeEndDate(e.target.value);
+                    }}
+                  />
+                </label>
+              </div>
+              <div className="form-field">
+                <span>Boek(en)</span>
+                <div className="weekchallenge-mobile-book-list">
+                  {(() => {
+                    const candidateBooks = books.filter(
+                      (b) =>
+                        b.status === "aan-het-lezen" || b.status === "wil-ik-lezen"
+                    );
+                    const currentlyReading = candidateBooks
+                      .filter((b) => b.status === "aan-het-lezen")
+                      .sort((a, b) => a.title.localeCompare(b.title));
+                    const tbrBooks = candidateBooks
+                      .filter((b) => b.status === "wil-ik-lezen")
+                      .sort((a, b) => {
+                        const aOrder = a.order ?? Number.MAX_SAFE_INTEGER;
+                        const bOrder = b.order ?? Number.MAX_SAFE_INTEGER;
+                        if (aOrder !== bOrder) return aOrder - bOrder;
+                        return a.title.localeCompare(b.title);
+                      });
+                    const selectable = [...currentlyReading, ...tbrBooks];
+                    if (!selectable.length) {
+                      return (
+                        <p className="page-intro-small">
+                          Je hebt nog geen boeken op je leeslijst of TBR.
+                        </p>
+                      );
+                    }
+                    return selectable.map((book) => {
+                      const isSelected = weekSelectedBookIds.includes(book.id);
+                      const pages = book.pageCount;
+                      return (
+                        <button
+                          key={book.id}
+                          type="button"
+                          className={`weekchallenge-mobile-book-pill ${
+                            isSelected ? "selected" : ""
+                          }`}
+                          onClick={() => {
+                            setWeekSelectedBookIds((prev) =>
+                              isSelected
+                                ? prev.filter((id) => id !== book.id)
+                                : [...prev, book.id]
+                            );
+                          }}
+                        >
+                          <div className="weekchallenge-mobile-book-pill-inner">
+                            <div className="weekchallenge-mobile-book-cover">
+                              {book.coverUrl ? (
+                                <img src={book.coverUrl} alt={book.title} />
+                              ) : (
+                                <div className="weekchallenge-mobile-book-cover-placeholder">
+                                  {book.title.charAt(0).toUpperCase()}
                                 </div>
-                                <div className="weekchallenge-mobile-book-text">
-                                  <div className="weekchallenge-mobile-book-title">
-                                    {book.title}
-                                  </div>
-                                  <div className="weekchallenge-mobile-book-meta">
-                                    <span>{book.authors}</span>
-                                    {pages ? (
-                                      <span> · {pages} blz</span>
-                                    ) : (
-                                      <span> · aantal pagina&apos;s onbekend</span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </div>
-
-                  {weekSelectedBookIds.length > 0 && (
-                    <div className="form-field">
-                      <span>Leesdagen per boek</span>
-                      <div className="weekchallenge-mobile-days-per-book">
-                        {weekSelectedBookIds.map((bookId) => {
-                          const book = books.find((b) => b.id === bookId);
-                          if (!book) return null;
-                          const selected = weekReadingDaysByBook[bookId] ?? [];
-                          return (
-                            <div key={bookId} className="weekchallenge-mobile-book-days">
-                              <div className="weekchallenge-mobile-book-days-title">
+                              )}
+                            </div>
+                            <div className="weekchallenge-mobile-book-text">
+                              <div className="weekchallenge-mobile-book-title">
                                 {book.title}
                               </div>
-                              <div className="weekchallenge-mobile-days-chips">
-                                {allDays.map((day) => {
-                                  const isSelected = selected.includes(day.dateStr);
-                                  return (
-                                    <button
-                                      key={day.dateStr}
-                                      type="button"
-                                      className={`weekchallenge-mobile-day-chip ${
-                                        isSelected ? "selected" : ""
-                                      }`}
-                                      onClick={() => {
-                                        setWeekReadingDaysByBook((prev) => {
-                                          const current = prev[bookId] ?? [];
-                                          const exists = current.includes(day.dateStr);
-                                          const nextForBook = exists
-                                            ? current.filter((d) => d !== day.dateStr)
-                                            : [...current, day.dateStr].sort();
-                                          return { ...prev, [bookId]: nextForBook };
-                                        });
-                                      }}
-                                    >
-                                      {getDayName(day.date).substring(0, 2)}{" "}
-                                      {formatDateDisplay(day.dateStr)}
-                                    </button>
-                                  );
-                                })}
+                              <div className="weekchallenge-mobile-book-meta">
+                                <span>{book.authors}</span>
+                                {pages ? (
+                                  <span> · {pages} blz</span>
+                                ) : (
+                                  <span> · aantal pagina&apos;s onbekend</span>
+                                )}
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                          </div>
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
 
-                  <div className="weekchallenge-mobile-summary">
-                    {selectedBooksForWeek.length === 0 ? (
-                      <p className="weekchallenge-mobile-summary-text">
-                        Kies minimaal één boek om een weekchallenge te maken.
-                      </p>
-                    ) : (
-                      <p className="weekchallenge-mobile-summary-text">
-                        Je kiest nu per boek op welke dagen je wilt lezen.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="modal-actions">
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => {
-                        setIsWeekModalOpen(false);
-                        setEditingWeekChallenge(null);
-                      }}
-                    >
-                      Annuleren
-                    </button>
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={() => {
-                        const drafts = buildWeekDraftFromMobileSelection();
-                        if (!drafts) return;
-                        saveWeekChallengeFromDraft(drafts);
-                      }}
-                    >
-                      Weekchallenge opslaan
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <h3>
-                    {editingWeekChallenge ? "Weekchallenge bewerken" : "Nieuwe weekchallenge"}
-                  </h3>
-                  <p className="modal-intro">
-                    Geef aan hoeveel boeken je in deze week wilt lezen en per boek
-                    hoeveel pagina&apos;s je per dag leest.
-                  </p>
-                  <div className="form-field-inline">
-                    <label className="form-field">
-                      <span>Startdatum</span>
-                      <input
-                        type="date"
-                        value={weekChallengeStartDate}
-                        onChange={(e) => {
-                          setWeekChallengeStartDate(e.target.value);
-                          // Update dailyPages voor alle boeken
-                          const newStart = getDateFromString(e.target.value);
-                          const newEnd = getDateFromString(weekChallengeEndDate);
-                          const newDays: string[] = [];
-                          let cursor = new Date(newStart);
-                          while (cursor <= newEnd) {
-                            newDays.push(formatDate(cursor));
-                            cursor.setDate(cursor.getDate() + 1);
-                          }
-                          setWeekBooksDraft((prev) =>
-                            prev.map((book) => ({
-                              ...book,
-                              dailyPages: newDays.reduce((acc, date) => {
-                                acc[date] = book.dailyPages[date] || "";
-                                return acc;
-                              }, {} as Record<string, string>),
-                            }))
-                          );
-                        }}
-                      />
-                    </label>
-                    <label className="form-field">
-                      <span>Einddatum</span>
-                      <input
-                        type="date"
-                        value={weekChallengeEndDate}
-                        min={weekChallengeStartDate}
-                        onChange={(e) => {
-                          setWeekChallengeEndDate(e.target.value);
-                          // Update dailyPages voor alle boeken
-                          const newStart = getDateFromString(weekChallengeStartDate);
-                          const newEnd = getDateFromString(e.target.value);
-                          const newDays: string[] = [];
-                          let cursor = new Date(newStart);
-                          while (cursor <= newEnd) {
-                            newDays.push(formatDate(cursor));
-                            cursor.setDate(cursor.getDate() + 1);
-                          }
-                          setWeekBooksDraft((prev) =>
-                            prev.map((book) => ({
-                              ...book,
-                              dailyPages: newDays.reduce((acc, date) => {
-                                acc[date] = book.dailyPages[date] || "";
-                                return acc;
-                              }, {} as Record<string, string>),
-                            }))
-                          );
-                        }}
-                      />
-                    </label>
-                  </div>
-                  <div className="form-field">
-                    <span>Aantal boeken deze week</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={weekBookCount}
-                      onChange={(e) => {
-                        const value = Math.max(1, Number(e.target.value) || 1);
-                        setWeekBookCount(value);
-                        syncWeekBooksDraft(value);
-                      }}
-                    />
-                  </div>
-                  <div className="weekchallenge-books-list">
-                    {Array.from({ length: weekBookCount }).map((_, index) => {
-                      const row = weekBooksDraft[index] || {
-                        totalPages: "",
-                        dailyPages: {},
-                        selectedDays: [],
-                      };
+              {weekSelectedBookIds.length > 0 && (
+                <div className="form-field">
+                  <span>Leesdagen per boek</span>
+                  <div className="weekchallenge-mobile-days-per-book">
+                    {weekSelectedBookIds.map((bookId) => {
+                      const book = books.find((b) => b.id === bookId);
+                      if (!book) return null;
+                      const selected = weekReadingDaysByBook[bookId] ?? [];
                       return (
-                        <div key={index} className="weekchallenge-book-card">
-                          <div className="weekchallenge-book-header">
-                            <h4>Boek {index + 1}</h4>
-                            <button
-                              type="button"
-                              className="link-button"
-                              onClick={() => autoDistributeBookPages(index)}
-                              disabled={!row.totalPages || row.selectedDays.length === 0}
-                            >
-                              Automatisch verdelen
-                            </button>
+                        <div key={bookId} className="weekchallenge-mobile-book-days">
+                          <div className="weekchallenge-mobile-book-days-title">
+                            {book.title}
                           </div>
-                          <div className="weekchallenge-book-fields">
-                            <label>
-                              <span>Pagina&apos;s in dit boek</span>
-                              <input
-                                type="number"
-                                min={1}
-                                value={row.totalPages}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  setWeekBooksDraft((prev) => {
-                                    const next = [...prev];
-                                    next[index] = {
-                                      ...next[index],
-                                      totalPages: value,
-                                    };
-                                    return next;
-                                  });
-                                }}
-                              />
-                            </label>
-                          </div>
-                          <div className="weekchallenge-days-grid">
+                          <div className="weekchallenge-mobile-days-chips">
                             {allDays.map((day) => {
-                              const isSelected = row.selectedDays.includes(day.dateStr);
-                              const pagesValue = row.dailyPages[day.dateStr] || "";
+                              const isSelected = selected.includes(day.dateStr);
                               return (
-                                <div key={day.dateStr} className="weekchallenge-day-item">
-                                  <label className="weekchallenge-day-checkbox">
-                                    <input
-                                      type="checkbox"
-                                      checked={isSelected}
-                                      onChange={(e) => {
-                                        setWeekBooksDraft((prev) => {
-                                          const next = [...prev];
-                                          const current = next[index] || {
-                                            totalPages: "",
-                                            dailyPages: {},
-                                            selectedDays: [],
-                                          };
-                                          if (e.target.checked) {
-                                            current.selectedDays = [
-                                              ...current.selectedDays,
-                                              day.dateStr,
-                                            ];
-                                          } else {
-                                            current.selectedDays = current.selectedDays.filter(
-                                              (d) => d !== day.dateStr
-                                            );
-                                            current.dailyPages[day.dateStr] = "";
-                                          }
-                                          next[index] = current;
-                                          return next;
-                                        });
-                                      }}
-                                    />
-                                    <span>
-                                      {getDayName(day.date).substring(0, 2)} {formatDateDisplay(day.dateStr)}
-                                    </span>
-                                  </label>
-                                  {isSelected && (
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      value={pagesValue}
-                                      placeholder="0"
-                                      onChange={(e) => {
-                                        const value = e.target.value;
-                                        setWeekBooksDraft((prev) => {
-                                          const next = [...prev];
-                                          next[index] = {
-                                            ...next[index],
-                                            dailyPages: {
-                                              ...next[index].dailyPages,
-                                              [day.dateStr]: value,
-                                            },
-                                          };
-                                          return next;
-                                        });
-                                      }}
-                                      className="weekchallenge-day-pages-input"
-                                    />
-                                  )}
-                                </div>
+                                <button
+                                  key={day.dateStr}
+                                  type="button"
+                                  className={`weekchallenge-mobile-day-chip ${
+                                    isSelected ? "selected" : ""
+                                  }`}
+                                  onClick={() => {
+                                    setWeekReadingDaysByBook((prev) => {
+                                      const current = prev[bookId] ?? [];
+                                      const exists = current.includes(day.dateStr);
+                                      const nextForBook = exists
+                                        ? current.filter((d) => d !== day.dateStr)
+                                        : [...current, day.dateStr].sort();
+                                      return { ...prev, [bookId]: nextForBook };
+                                    });
+                                  }}
+                                >
+                                  {getDayName(day.date).substring(0, 2)}{" "}
+                                  {formatDateDisplay(day.dateStr)}
+                                </button>
                               );
                             })}
                           </div>
@@ -1298,27 +1126,44 @@ export function ChallengePage() {
                       );
                     })}
                   </div>
-                  <div className="modal-actions">
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => {
-                        setIsWeekModalOpen(false);
-                        setEditingWeekChallenge(null);
-                      }}
-                    >
-                      Annuleren
-                    </button>
-                    <button
-                      type="button"
-                      className="primary-button"
-                      onClick={() => saveWeekChallengeFromDraft()}
-                    >
-                      {editingWeekChallenge ? "Wijzigingen opslaan" : "Weekchallenge opslaan"}
-                    </button>
-                  </div>
-                </>
+                </div>
               )}
+
+              <div className="weekchallenge-mobile-summary">
+                {selectedBooksForWeek.length === 0 ? (
+                  <p className="weekchallenge-mobile-summary-text">
+                    Kies minimaal één boek om een weekchallenge te maken.
+                  </p>
+                ) : (
+                  <p className="weekchallenge-mobile-summary-text">
+                    Je kiest nu per boek op welke dagen je wilt lezen.
+                  </p>
+                )}
+              </div>
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setIsWeekModalOpen(false);
+                    setEditingWeekChallenge(null);
+                  }}
+                >
+                  Annuleren
+                </button>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => {
+                    const drafts = buildWeekDraftFromMobileSelection();
+                    if (!drafts) return;
+                    saveWeekChallengeFromDraft(drafts);
+                  }}
+                >
+                  {editingWeekChallenge ? "Wijzigingen opslaan" : "Weekchallenge opslaan"}
+                </button>
+              </div>
             </div>
           </div>
         );
@@ -1421,6 +1266,30 @@ export function ChallengePage() {
               "Maak een weekchallenge aan om dagelijkse doelen te zien."
             )}
           </p>
+          {challenge.weeklyChallenge && dailyGoals && (() => {
+            const todayStr = formatDate(new Date());
+            const todayGoal = dailyGoals.find((g) => g.date === todayStr);
+            if (!todayGoal?.bookTargets?.length) return null;
+            return (
+              <div className="challenge-today-card">
+                <div className="challenge-today-label">Vandaag lees je</div>
+                {todayGoal.bookTargets.map((bt) => (
+                  <div key={bt.bookId} className="challenge-today-book-row">
+                    <span className="challenge-today-book-title">{bt.bookTitle}</span>
+                    <span className="challenge-today-book-target">
+                      → tot bladzijde {bt.cumulativePage}
+                    </span>
+                  </div>
+                ))}
+                <Link
+                  to={withBase(basePath, `/challenge/leessessie/${todayStr}`)}
+                  className="primary-button challenge-today-session-btn"
+                >
+                  Start leessessie
+                </Link>
+              </div>
+            );
+          })()}
           {(challenge.weeklyChallenge || challenge.weeklyPages) && dailyGoals && (
             <div className="daily-goals-list-compact">
               {dailyGoals.map((goal) => {
@@ -1465,6 +1334,19 @@ export function ChallengePage() {
                         </span>
                       </div>
                       <div className="daily-goal-badges-compact">
+                        {goal.bookTargets &&
+                          goal.bookTargets.length > 1 &&
+                          challenge.weeklyChallenge && (
+                            <span className="multi-book-day-badge">
+                              {goal.bookTargets.reduce((s, bt) => {
+                                const plan = challenge.weeklyChallenge!.books.find(
+                                  (p) => p.bookId === bt.bookId
+                                );
+                                return s + (plan?.dailyPages[goal.date] ?? 0);
+                              }, 0)}{" "}
+                              blz · {goal.bookTargets.length} boeken
+                            </span>
+                          )}
                         {isToday && <span className="today-badge-small">Nu</span>}
                         {isAutoOff && (
                           <span className="offday-badge-small">Geen tijd</span>
