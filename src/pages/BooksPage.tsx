@@ -3050,7 +3050,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                 placeholder="Zoek auteur…"
                 value={libAuthorSearch}
                 onChange={(e) => setLibAuthorSearch(e.target.value)}
-                autoFocus
               />
             </div>
             <div className="lib-sheet-list">
@@ -3100,7 +3099,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                 placeholder="Zoek genre…"
                 value={libGenreSearch}
                 onChange={(e) => setLibGenreSearch(e.target.value)}
-                autoFocus
               />
             </div>
             <div className="lib-sheet-list">
@@ -3158,7 +3156,6 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                 placeholder="Zoek serie…"
                 value={libSeriesSearch}
                 onChange={(e) => setLibSeriesSearch(e.target.value)}
-                autoFocus
               />
             </div>
             <div className="lib-sheet-list">
