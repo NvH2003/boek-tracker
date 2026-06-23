@@ -157,11 +157,16 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       return Array.isArray(parsed) ? parsed : (typeof parsed === "string" ? [parsed] : []);
     } catch { return []; }
   });
+  const [libSeriesFilter, setLibSeriesFilter] = useState<string | null>(() => {
+    try { return sessionStorage.getItem("bt_lib_series"); } catch { return null; }
+  });
   const [showAuthorSheet, setShowAuthorSheet] = useState(false);
   const [showCollectionSheet, setShowCollectionSheet] = useState(false);
   const [showGenreSheet, setShowGenreSheet] = useState(false);
+  const [showSeriesSheet, setShowSeriesSheet] = useState(false);
   const [libAuthorSearch, setLibAuthorSearch] = useState("");
   const [libGenreSearch, setLibGenreSearch] = useState("");
+  const [libSeriesSearch, setLibSeriesSearch] = useState("");
   const [newCollectionName, setNewCollectionName] = useState("");
   const [editingCollectionId, setEditingCollectionId] = useState<string | null>(null);
   const [editCollectionName, setEditCollectionName] = useState("");
@@ -184,8 +189,10 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       if (libGenreFilter.length > 0) sessionStorage.setItem("bt_lib_genre", JSON.stringify(libGenreFilter));
       else sessionStorage.removeItem("bt_lib_genre");
       sessionStorage.setItem("bt_lib_sort", libSortMode);
+      if (libSeriesFilter) sessionStorage.setItem("bt_lib_series", libSeriesFilter);
+      else sessionStorage.removeItem("bt_lib_series");
     } catch { /* ignore */ }
-  }, [libSearchQuery, libAuthorFilter, libCollectionFilter, libGenreFilter, libSortMode]);
+  }, [libSearchQuery, libAuthorFilter, libCollectionFilter, libGenreFilter, libSortMode, libSeriesFilter]);
 
   const existingAuthors = useMemo(() => {
     const set = new Set<string>();
@@ -224,13 +231,14 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       .slice(0, 8);
   }, [books]);
 
-  // Authors present in the library, with their book count, sorted alphabetically
+  // Authors present in the library, split on comma, with their book count
   const libUniqueAuthors = useMemo(() => {
     const counts = new Map<string, number>();
     books.forEach((b) => {
-      const key = (b.authors ?? "").trim();
-      if (!key) return;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (!b.authors) return;
+      b.authors.split(",").map((a) => a.trim()).filter(Boolean).forEach((name) => {
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+      });
     });
     return Array.from(counts.entries())
       .sort((a, b) => a[0].localeCompare(b[0], "nl-NL"))
@@ -260,6 +268,24 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       .sort((a, b) => a[0].localeCompare(b[0], "nl-NL"))
       .map(([name, count]) => ({ name, count }));
   }, [books]);
+
+  // Unieke series in de bibliotheek — alleen van de gefilterde auteur als die actief is
+  const libUniqueSeries = useMemo(() => {
+    const counts = new Map<string, number>();
+    books.forEach((b) => {
+      if (!b.seriesName) return;
+      if (libAuthorFilter) {
+        const bookAuthors = (b.authors ?? "").split(",").map((a) => a.trim()).filter(Boolean);
+        if (!bookAuthors.includes(libAuthorFilter)) return;
+      }
+      const name = b.seriesName.trim();
+      if (!name) return;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .sort((a, b) => a[0].localeCompare(b[0], "nl-NL"))
+      .map(([name, count]) => ({ name, count }));
+  }, [books, libAuthorFilter]);
 
   const existingSeries = useMemo(() => {
     const set = new Set<string>();
@@ -627,7 +653,17 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     const q = libSearchQuery.trim().toLowerCase();
     const filtered = books.filter((b) => {
       if (statusFilter !== "alle" && b.status !== statusFilter) return false;
-      if (libAuthorFilter && (b.authors ?? "").trim() !== libAuthorFilter) return false;
+      if (libAuthorFilter) {
+        const bookAuthors = (b.authors ?? "").split(",").map((a) => a.trim()).filter(Boolean);
+        if (!bookAuthors.includes(libAuthorFilter)) return false;
+      }
+      if (libSeriesFilter) {
+        if (libSeriesFilter === "__geen__") {
+          if ((b.seriesName ?? "").trim()) return false;
+        } else {
+          if ((b.seriesName ?? "").trim() !== libSeriesFilter) return false;
+        }
+      }
       if (libCollectionFilter && !(b.shelfIds ?? []).includes(libCollectionFilter)) return false;
       if (libGenreFilter.length > 0) {
         const bookGenres = parseGenres(b.genre).map((g) => g.toLowerCase());
@@ -659,7 +695,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       });
     }
     return sortBooksBySeries(filtered);
-  }, [books, statusFilter, libSearchQuery, libAuthorFilter, libCollectionFilter, libGenreFilter, libSortMode]);
+  }, [books, statusFilter, libSearchQuery, libAuthorFilter, libSeriesFilter, libCollectionFilter, libGenreFilter, libSortMode]);
 
   // ─── Verzamelingen (collecties) beheer ─────────────────────────────────────
   function handleAddCollection(e: FormEvent) {
@@ -2778,6 +2814,15 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
             </button>
             <button
               type="button"
+              className={`lib-filter-btn${libSeriesFilter ? " lib-filter-btn--active" : ""}`}
+              onClick={() => { setLibSeriesSearch(""); setShowSeriesSheet(true); }}
+            >
+              <span className="lib-filter-btn-icon">📖</span>
+              Serie
+              {libSeriesFilter && <span className="lib-filter-btn-badge">1</span>}
+            </button>
+            <button
+              type="button"
               className={`lib-filter-btn${libCollectionFilter ? " lib-filter-btn--active" : ""}`}
               onClick={() => setShowCollectionSheet(true)}
             >
@@ -2818,12 +2863,18 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
           </div>
 
           {/* Actieve filters */}
-          {(libAuthorFilter || libCollectionFilter || libGenreFilter.length > 0) && (
+          {(libAuthorFilter || libSeriesFilter || libCollectionFilter || libGenreFilter.length > 0 || libSortMode !== "auteur") && (
             <div className="lib-active-filters">
               {libAuthorFilter && (
                 <span className="lib-active-filter-pill">
                   {libAuthorFilter}
-                  <button type="button" className="lib-active-filter-remove" onClick={() => setLibAuthorFilter(null)} aria-label="Verwijder auteurfilter">×</button>
+                  <button type="button" className="lib-active-filter-remove" onClick={() => { setLibAuthorFilter(null); setLibSeriesFilter(null); }} aria-label="Verwijder auteurfilter">×</button>
+                </span>
+              )}
+              {libSeriesFilter && (
+                <span className="lib-active-filter-pill lib-active-filter-pill--series">
+                  {libSeriesFilter === "__geen__" ? "Geen serie" : libSeriesFilter}
+                  <button type="button" className="lib-active-filter-remove" onClick={() => setLibSeriesFilter(null)} aria-label="Verwijder seriefilter">×</button>
                 </span>
               )}
               {libCollectionFilter && (
@@ -2838,12 +2889,18 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                   <button type="button" className="lib-active-filter-remove" onClick={() => setLibGenreFilter((prev) => prev.filter((x) => x !== g))} aria-label={`Verwijder genre-filter ${g}`}>×</button>
                 </span>
               ))}
+              {libSortMode !== "auteur" && (
+                <span className="lib-active-filter-pill lib-active-filter-pill--sort">
+                  {{ auteur: "Auteur A–Z", titel: "Titel A–Z", beoordeling: "Beoordeling", serie: "Serie A–Z" }[libSortMode]}
+                  <button type="button" className="lib-active-filter-remove" onClick={() => setLibSortMode("auteur")} aria-label="Verwijder sortering">×</button>
+                </span>
+              )}
               <span className="lib-filter-count">{filteredBooks.length} boek{filteredBooks.length !== 1 ? "en" : ""}</span>
             </div>
           )}
 
           {/* Teller bij alleen zoek/statusfilter (geen pills) */}
-          {filteredBooks.length > 0 && !libAuthorFilter && !libCollectionFilter && libGenreFilter.length === 0 && (libSearchQuery.trim() || statusFilter !== "alle") && (
+          {filteredBooks.length > 0 && !libAuthorFilter && !libSeriesFilter && !libCollectionFilter && libGenreFilter.length === 0 && libSortMode === "auteur" && (libSearchQuery.trim() || statusFilter !== "alle") && (
             <div className="lib-filter-count-row">
               <span className="lib-filter-count">{filteredBooks.length} boek{filteredBooks.length !== 1 ? "en" : ""}</span>
             </div>
@@ -2869,6 +2926,7 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                     onClick={() => {
                       setLibSearchQuery("");
                       setLibAuthorFilter(null);
+                      setLibSeriesFilter(null);
                       setLibCollectionFilter(null);
                       setLibGenreFilter([]);
                       setStatusFilter("alle");
@@ -3083,6 +3141,76 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
         </div>
       )}
 
+      {/* ─── Serie sheet ──────────────────────────────────────────────────── */}
+      {showSeriesSheet && (
+        <div className="lib-sheet-overlay" onClick={() => setShowSeriesSheet(false)}>
+          <div className="lib-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="lib-sheet-header">
+              <h3 className="lib-sheet-title">
+                Filter op serie{libAuthorFilter ? ` — ${libAuthorFilter}` : ""}
+              </h3>
+              <button className="lib-sheet-close" onClick={() => setShowSeriesSheet(false)} aria-label="Sluiten">×</button>
+            </div>
+            <div className="lib-sheet-search-wrap">
+              <input
+                type="search"
+                className="lib-sheet-search"
+                placeholder="Zoek serie…"
+                value={libSeriesSearch}
+                onChange={(e) => setLibSeriesSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="lib-sheet-list">
+              {/* Geen serie optie */}
+              {!libSeriesSearch && (() => {
+                const count = books.filter((b) => {
+                  if (libAuthorFilter) {
+                    const ba = (b.authors ?? "").split(",").map((a) => a.trim()).filter(Boolean);
+                    if (!ba.includes(libAuthorFilter)) return false;
+                  }
+                  return !(b.seriesName ?? "").trim();
+                }).length;
+                return count > 0 ? (
+                  <button
+                    key="__geen__"
+                    type="button"
+                    className={`lib-sheet-item${libSeriesFilter === "__geen__" ? " lib-sheet-item--active" : ""}`}
+                    onClick={() => { setLibSeriesFilter(libSeriesFilter === "__geen__" ? null : "__geen__"); setShowSeriesSheet(false); }}
+                  >
+                    <span className="lib-sheet-item-name" style={{ fontStyle: "italic" }}>Geen serie</span>
+                    <span className="lib-sheet-item-count">{count}</span>
+                  </button>
+                ) : null;
+              })()}
+              {libUniqueSeries
+                .filter((s) => !libSeriesSearch || s.name.toLowerCase().includes(libSeriesSearch.toLowerCase()))
+                .map((s) => (
+                  <button
+                    key={s.name}
+                    type="button"
+                    className={`lib-sheet-item${libSeriesFilter === s.name ? " lib-sheet-item--active" : ""}`}
+                    onClick={() => { setLibSeriesFilter(libSeriesFilter === s.name ? null : s.name); setShowSeriesSheet(false); }}
+                  >
+                    <span className="lib-sheet-item-name">{s.name}</span>
+                    <span className="lib-sheet-item-count">{s.count}</span>
+                  </button>
+                ))}
+              {libUniqueSeries.filter((s) => !libSeriesSearch || s.name.toLowerCase().includes(libSeriesSearch.toLowerCase())).length === 0 && libSeriesSearch && (
+                <p className="lib-sheet-empty">{libAuthorFilter ? "Geen series van deze auteur." : "Geen series gevonden."}</p>
+              )}
+            </div>
+            {libSeriesFilter && (
+              <div className="lib-sheet-footer">
+                <button type="button" className="lib-sheet-clear-btn" onClick={() => { setLibSeriesFilter(null); setShowSeriesSheet(false); }}>
+                  Wissen
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ─── Verzamelingen sheet ──────────────────────────────────────────── */}
       {showCollectionSheet && (
         <div className="lib-sheet-overlay" onClick={() => setShowCollectionSheet(false)}>
@@ -3187,6 +3315,13 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                 );
               })}
             </div>
+            {libSortMode !== "auteur" && (
+              <div className="lib-sheet-footer">
+                <button type="button" className="lib-sheet-clear-btn" onClick={() => { setLibSortMode("auteur"); setShowSortSheet(false); }}>
+                  Sortering wissen
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

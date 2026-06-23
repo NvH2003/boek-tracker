@@ -7000,6 +7000,18 @@ button.genre-assist-inline-btn {
   color: #bae6fd;
 }
 
+.lib-active-filter-pill--series {
+  background: rgba(167, 139, 250, 0.15);
+  border-color: rgba(167, 139, 250, 0.45);
+  color: #ddd6fe;
+}
+
+.lib-active-filter-pill--sort {
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.35);
+  color: #fde68a;
+}
+
 .lib-active-filter-remove {
   flex-shrink: 0;
   background: none;
