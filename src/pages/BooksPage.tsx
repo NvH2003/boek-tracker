@@ -73,6 +73,10 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
     if (param === "wil-ik-lezen" || param === "aan-het-lezen" || param === "gelezen" || param === "geen-status") {
       return param;
     }
+    try {
+      const saved = sessionStorage.getItem("bt_lib_status") as ReadStatus | "alle" | null;
+      if (saved === "wil-ik-lezen" || saved === "aan-het-lezen" || saved === "gelezen" || saved === "geen-status" || saved === "alle") return saved;
+    } catch { /* ignore */ }
     return "alle" as const;
   })();
   const { books, shelves, challenge } = useInstantData();
@@ -135,6 +139,54 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   /** Open Library 3-letter code: "" = all, "dut" = Nederlands, "eng" = English, etc. */
   const [authorLanguageFilter, setAuthorLanguageFilter] = useState<string>("");
 
+  // ─── Bibliotheek filter state (hersteld vanuit sessionStorage) ─────────────
+  const [libSearchQuery, setLibSearchQuery] = useState<string>(() => {
+    try { return sessionStorage.getItem("bt_lib_q") ?? ""; } catch { return ""; }
+  });
+  const [libAuthorFilter, setLibAuthorFilter] = useState<string | null>(() => {
+    try { return sessionStorage.getItem("bt_lib_author"); } catch { return null; }
+  });
+  const [libCollectionFilter, setLibCollectionFilter] = useState<string | null>(() => {
+    try { return sessionStorage.getItem("bt_lib_collection"); } catch { return null; }
+  });
+  const [libGenreFilter, setLibGenreFilter] = useState<string[]>(() => {
+    try {
+      const raw = sessionStorage.getItem("bt_lib_genre");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : (typeof parsed === "string" ? [parsed] : []);
+    } catch { return []; }
+  });
+  const [showAuthorSheet, setShowAuthorSheet] = useState(false);
+  const [showCollectionSheet, setShowCollectionSheet] = useState(false);
+  const [showGenreSheet, setShowGenreSheet] = useState(false);
+  const [libAuthorSearch, setLibAuthorSearch] = useState("");
+  const [libGenreSearch, setLibGenreSearch] = useState("");
+  const [newCollectionName, setNewCollectionName] = useState("");
+  const [editingCollectionId, setEditingCollectionId] = useState<string | null>(null);
+  const [editCollectionName, setEditCollectionName] = useState("");
+  const [libSortMode, setLibSortMode] = useState<"auteur" | "titel" | "beoordeling" | "serie">(() => {
+    try { return (sessionStorage.getItem("bt_lib_sort") as "auteur" | "titel" | "beoordeling" | "serie") ?? "auteur"; } catch { return "auteur"; }
+  });
+  const [showSortSheet, setShowSortSheet] = useState(false);
+  const [libViewMode, setLibViewMode] = useState<"grid" | "list">(() => {
+    try { return (window.localStorage.getItem("bt_lib_view_mode") as "grid" | "list") ?? "grid"; } catch { return "grid"; }
+  });
+
+  // Sla filters op in sessionStorage bij elke wijziging
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("bt_lib_q", libSearchQuery);
+      if (libAuthorFilter) sessionStorage.setItem("bt_lib_author", libAuthorFilter);
+      else sessionStorage.removeItem("bt_lib_author");
+      if (libCollectionFilter) sessionStorage.setItem("bt_lib_collection", libCollectionFilter);
+      else sessionStorage.removeItem("bt_lib_collection");
+      if (libGenreFilter.length > 0) sessionStorage.setItem("bt_lib_genre", JSON.stringify(libGenreFilter));
+      else sessionStorage.removeItem("bt_lib_genre");
+      sessionStorage.setItem("bt_lib_sort", libSortMode);
+    } catch { /* ignore */ }
+  }, [libSearchQuery, libAuthorFilter, libCollectionFilter, libGenreFilter, libSortMode]);
+
   const existingAuthors = useMemo(() => {
     const set = new Set<string>();
     books.forEach((b) => {
@@ -170,6 +222,43 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       })
       .map(([name]) => name)
       .slice(0, 8);
+  }, [books]);
+
+  // Authors present in the library, with their book count, sorted alphabetically
+  const libUniqueAuthors = useMemo(() => {
+    const counts = new Map<string, number>();
+    books.forEach((b) => {
+      const key = (b.authors ?? "").trim();
+      if (!key) return;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .sort((a, b) => a[0].localeCompare(b[0], "nl-NL"))
+      .map(([name, count]) => ({ name, count }));
+  }, [books]);
+
+  // Custom (non-system) collections with their book count
+  const libCollections = useMemo(() => {
+    return shelves
+      .filter((s) => !s.system)
+      .map((s) => ({
+        ...s,
+        count: books.filter((b) => b.shelfIds?.includes(s.id)).length,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "nl-NL"));
+  }, [shelves, books]);
+
+  // Unique genres in the library with book counts
+  const libUniqueGenres = useMemo(() => {
+    const counts = new Map<string, number>();
+    books.forEach((b) => {
+      parseGenres(b.genre).forEach((g) => {
+        counts.set(g, (counts.get(g) ?? 0) + 1);
+      });
+    });
+    return Array.from(counts.entries())
+      .sort((a, b) => a[0].localeCompare(b[0], "nl-NL"))
+      .map(([name, count]) => ({ name, count }));
   }, [books]);
 
   const existingSeries = useMemo(() => {
@@ -535,11 +624,73 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
   }
 
   const filteredBooks = useMemo(() => {
-    const filtered = books.filter((b) =>
-      statusFilter === "alle" ? true : b.status === statusFilter
-    );
+    const q = libSearchQuery.trim().toLowerCase();
+    const filtered = books.filter((b) => {
+      if (statusFilter !== "alle" && b.status !== statusFilter) return false;
+      if (libAuthorFilter && (b.authors ?? "").trim() !== libAuthorFilter) return false;
+      if (libCollectionFilter && !(b.shelfIds ?? []).includes(libCollectionFilter)) return false;
+      if (libGenreFilter.length > 0) {
+        const bookGenres = parseGenres(b.genre).map((g) => g.toLowerCase());
+        if (!libGenreFilter.every((sel) => bookGenres.includes(sel.toLowerCase()))) return false;
+      }
+      if (q) {
+        const inTitle = b.title.toLowerCase().includes(q);
+        const inAuthors = (b.authors ?? "").toLowerCase().includes(q);
+        if (!inTitle && !inAuthors) return false;
+      }
+      return true;
+    });
+
+    if (libSortMode === "auteur") return sortBooksBySeries(filtered);
+    if (libSortMode === "titel") {
+      return [...filtered].sort((a, b) => a.title.localeCompare(b.title, "nl-NL"));
+    }
+    if (libSortMode === "beoordeling") {
+      return [...filtered].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+    }
+    if (libSortMode === "serie") {
+      return [...filtered].sort((a, b) => {
+        if (!a.seriesName && !b.seriesName) return a.title.localeCompare(b.title, "nl-NL");
+        if (!a.seriesName) return 1;
+        if (!b.seriesName) return -1;
+        const s = a.seriesName.localeCompare(b.seriesName, "nl-NL");
+        if (s !== 0) return s;
+        return (a.seriesNumber ?? 0) - (b.seriesNumber ?? 0);
+      });
+    }
     return sortBooksBySeries(filtered);
-  }, [books, statusFilter]);
+  }, [books, statusFilter, libSearchQuery, libAuthorFilter, libCollectionFilter, libGenreFilter, libSortMode]);
+
+  // ─── Verzamelingen (collecties) beheer ─────────────────────────────────────
+  function handleAddCollection(e: FormEvent) {
+    e.preventDefault();
+    if (!newCollectionName.trim()) return;
+    const shelf: Shelf = { id: `shelf-${Date.now()}`, name: newCollectionName.trim() };
+    saveShelves([...shelves, shelf]);
+    setNewCollectionName("");
+  }
+
+  function startEditCollection(s: Shelf) {
+    setEditingCollectionId(s.id);
+    setEditCollectionName(s.name);
+  }
+
+  function saveEditCollection(id: string) {
+    if (!editCollectionName.trim()) { cancelEditCollection(); return; }
+    saveShelves(shelves.map((s) => s.id === id ? { ...s, name: editCollectionName.trim() } : s));
+    setEditingCollectionId(null);
+    setEditCollectionName("");
+  }
+
+  function cancelEditCollection() {
+    setEditingCollectionId(null);
+    setEditCollectionName("");
+  }
+
+  function removeCollection(id: string) {
+    if (libCollectionFilter === id) setLibCollectionFilter(null);
+    saveShelves(shelves.filter((s) => s.id !== id));
+  }
 
   function getBookPlankNames(book: Book): string[] {
     const ids = book.shelfIds ?? [];
@@ -2567,59 +2718,199 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       )}
 
       {showLibrary && (
-        <section className="card">
-          <header className="section-header">
-            <h2>Mijn bibliotheek</h2>
-            <div className="filters">
-              <label>
-                Status:
-                <select
-                  value={statusFilter}
-                  onChange={(e) => {
-                    const next = e.target.value as ReadStatus | "alle";
+        <section className="card lib-section">
+          <h2 className="lib-title">Mijn bibliotheek</h2>
+
+          {/* Zoekbalk */}
+          <div className="lib-search-wrap">
+            <span className="lib-search-icon" aria-hidden="true">⌕</span>
+            <input
+              type="search"
+              className="lib-search"
+              placeholder="Zoek op titel of auteur…"
+              value={libSearchQuery}
+              onChange={(e) => setLibSearchQuery(e.target.value)}
+            />
+            {libSearchQuery && (
+              <button className="lib-search-clear" onClick={() => setLibSearchQuery("")} aria-label="Wis zoekopdracht">×</button>
+            )}
+          </div>
+
+          {/* Status chips */}
+          <div className="lib-status-chips">
+            {(["alle", "wil-ik-lezen", "aan-het-lezen", "gelezen", "geen-status"] as const).map((s) => {
+              const labels: Record<string, string> = {
+                alle: "Alle",
+                "wil-ik-lezen": "Wil ik lezen",
+                "aan-het-lezen": "Aan het lezen",
+                gelezen: "Gelezen",
+                "geen-status": "Geen status",
+              };
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  className={`lib-status-chip${statusFilter === s ? " lib-status-chip--active" : ""}`}
+                  onClick={() => {
+                    const next = s === "alle" ? "alle" : s as ReadStatus;
                     setStatusFilter(next);
-                    if (next === "alle") {
-                      setSearchParams({});
-                    } else {
-                      setSearchParams({ status: next });
-                    }
+                    try { sessionStorage.setItem("bt_lib_status", next); } catch { /* ignore */ }
+                    if (s === "alle") setSearchParams({});
+                    else setSearchParams({ status: s });
                   }}
                 >
-                  <option value="alle">Alle</option>
-                  <option value="wil-ik-lezen">Wil ik lezen</option>
-                  <option value="aan-het-lezen">Aan het lezen</option>
-                  <option value="gelezen">Gelezen</option>
-                  <option value="geen-status">Geen status</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={enrichTbrDescriptions}
-                disabled={isEnrichingTBR}
-              >
-                {isEnrichingTBR ? "TBR aanvullen..." : "TBR-beschrijvingen ophalen"}
-              </button>
+                  {labels[s]}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Filter + sort + view-toggle rij */}
+          <div className="lib-filter-row">
+            <button
+              type="button"
+              className={`lib-filter-btn${libAuthorFilter ? " lib-filter-btn--active" : ""}`}
+              onClick={() => { setLibAuthorSearch(""); setShowAuthorSheet(true); }}
+            >
+              <span className="lib-filter-btn-icon">👤</span>
+              Auteur
+              {libAuthorFilter && <span className="lib-filter-btn-badge">1</span>}
+            </button>
+            <button
+              type="button"
+              className={`lib-filter-btn${libCollectionFilter ? " lib-filter-btn--active" : ""}`}
+              onClick={() => setShowCollectionSheet(true)}
+            >
+              <span className="lib-filter-btn-icon">📚</span>
+              Verzameling
+              {libCollectionFilter && <span className="lib-filter-btn-badge">1</span>}
+            </button>
+            <button
+              type="button"
+              className={`lib-filter-btn${libGenreFilter.length > 0 ? " lib-filter-btn--active" : ""}`}
+              onClick={() => { setLibGenreSearch(""); setShowGenreSheet(true); }}
+            >
+              <span className="lib-filter-btn-icon">🏷</span>
+              Genre
+              {libGenreFilter.length > 0 && <span className="lib-filter-btn-badge">{libGenreFilter.length}</span>}
+            </button>
+            <button
+              type="button"
+              className={`lib-filter-btn${libSortMode !== "auteur" ? " lib-filter-btn--active" : ""}`}
+              onClick={() => setShowSortSheet(true)}
+            >
+              <span className="lib-filter-btn-icon">⇅</span>
+              Sorteren
+            </button>
+            <button
+              type="button"
+              className="lib-filter-btn lib-view-toggle"
+              onClick={() => {
+                const next = libViewMode === "grid" ? "list" : "grid";
+                setLibViewMode(next);
+                try { window.localStorage.setItem("bt_lib_view_mode", next); } catch {}
+              }}
+              title={libViewMode === "grid" ? "Lijstweergave" : "Rasterweergave"}
+              aria-label={libViewMode === "grid" ? "Lijstweergave" : "Rasterweergave"}
+            >
+              {libViewMode === "grid" ? "☰" : "▦"}
+            </button>
+          </div>
+
+          {/* Actieve filters */}
+          {(libAuthorFilter || libCollectionFilter || libGenreFilter.length > 0) && (
+            <div className="lib-active-filters">
+              {libAuthorFilter && (
+                <span className="lib-active-filter-pill">
+                  {libAuthorFilter}
+                  <button type="button" className="lib-active-filter-remove" onClick={() => setLibAuthorFilter(null)} aria-label="Verwijder auteurfilter">×</button>
+                </span>
+              )}
+              {libCollectionFilter && (
+                <span className="lib-active-filter-pill lib-active-filter-pill--collection">
+                  {shelves.find((s) => s.id === libCollectionFilter)?.name ?? "Verzameling"}
+                  <button type="button" className="lib-active-filter-remove" onClick={() => setLibCollectionFilter(null)} aria-label="Verwijder verzamelingsfilter">×</button>
+                </span>
+              )}
+              {libGenreFilter.map((g) => (
+                <span key={g} className="lib-active-filter-pill lib-active-filter-pill--genre">
+                  {g}
+                  <button type="button" className="lib-active-filter-remove" onClick={() => setLibGenreFilter((prev) => prev.filter((x) => x !== g))} aria-label={`Verwijder genre-filter ${g}`}>×</button>
+                </span>
+              ))}
+              <span className="lib-filter-count">{filteredBooks.length} boek{filteredBooks.length !== 1 ? "en" : ""}</span>
             </div>
-          </header>
+          )}
+
+          {/* Teller bij alleen zoek/statusfilter (geen pills) */}
+          {filteredBooks.length > 0 && !libAuthorFilter && !libCollectionFilter && libGenreFilter.length === 0 && (libSearchQuery.trim() || statusFilter !== "alle") && (
+            <div className="lib-filter-count-row">
+              <span className="lib-filter-count">{filteredBooks.length} boek{filteredBooks.length !== 1 ? "en" : ""}</span>
+            </div>
+          )}
 
           {filteredBooks.length === 0 ? (
-            <p>Nog geen boeken in deze lijst.</p>
+            <div className="lib-empty-state">
+              {books.length === 0 ? (
+                <>
+                  <span className="lib-empty-icon">📚</span>
+                  <p className="lib-empty-msg">Je bibliotheek is nog leeg.</p>
+                  <button type="button" className="primary-button" onClick={() => navigate(withBase(basePath, "/zoeken"))}>
+                    Voeg je eerste boek toe
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="lib-empty-icon">🔍</span>
+                  <p className="lib-empty-msg">Geen boeken gevonden voor deze filters.</p>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      setLibSearchQuery("");
+                      setLibAuthorFilter(null);
+                      setLibCollectionFilter(null);
+                      setLibGenreFilter([]);
+                      setStatusFilter("alle");
+                      setSearchParams({});
+                    }}
+                  >
+                    Filters wissen
+                  </button>
+                </>
+              )}
+            </div>
           ) : (
-            <div className="book-grid">
+            <div className={`book-grid${libViewMode === "list" ? " book-grid--list" : ""}`}>
               {filteredBooks.map((book) => {
                 const progress = getChallengeProgress(book.id);
                 const showDailyGoalProgress =
                   book.status === "aan-het-lezen" && progress && progress.total > 0;
+                void showDailyGoalProgress;
                 return (
-                <article key={book.id} className="book-card">
+                <article
+                  key={book.id}
+                  className="book-card lib-book-card"
+                  data-status={book.status}
+                  onClick={() => goToDetails(book.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      goToDetails(book.id);
+                    }
+                  }}
+                >
                   <div className="book-card-header">
-                    {book.coverUrl && (
+                    {book.coverUrl ? (
                       <img
                         src={book.coverUrl}
                         alt={book.title}
                         className="book-cover"
                       />
+                    ) : (
+                      <div className="book-cover-placeholder" aria-hidden="true">📖</div>
                     )}
                     <div className="book-main">
                       {book.seriesName && (
@@ -2629,112 +2920,52 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
                         </div>
                       )}
                       <h3>{book.title}</h3>
-                      <p className="book-authors">{book.authors}</p>
-                      {book.genre && (
-                        (() => {
-                          const genres = parseGenresPreserveOrder(book.genre);
-                          const fullGenres = genres.join(", ");
-                          const extraCount = Math.max(0, genres.length - 2);
-                          const previewGenres =
-                            genres.length <= 2 ? fullGenres : genres.slice(0, 2).join(", ");
-                          const isOpen = extraCount > 0 && expandedGenreBookId === book.id;
-
-                          return (
-                            <div
-                              className="book-genre-badge genre-preview-toggle"
-                              onMouseEnter={() => {
-                                if (extraCount > 0) setExpandedGenreBookId(book.id);
-                              }}
-                              onMouseLeave={() => {
-                                if (isOpen) setExpandedGenreBookId(null);
-                              }}
-                              onClick={(e) => {
-                                if (extraCount <= 0) return;
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setExpandedGenreBookId((prev) => (prev === book.id ? null : book.id));
-                              }}
-                            >
-                              <span className="genre-preview-text">{previewGenres}</span>
-                              {extraCount > 0 && (
-                                <span className="genre-preview-more"> +{extraCount}</span>
-                              )}
-                              {isOpen && extraCount > 0 && (
-                                <div className="genre-preview-popover">
-                                  {genres.map((g) => (
-                                    <div key={g} className="genre-preview-line">
-                                      {g}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()
-                      )}
-                      {getBookPlankNames(book).length > 0 && (
-                        <div className="book-planks">
-                          <span className="book-planks-label">Boekenkasten:</span>
-                          {getBookPlankNames(book).map((name) => (
-                            <span key={name} className="plank-pill plank-pill-inline">{name}</span>
-                          ))}
-                        </div>
-                      )}
+                      <button
+                        type="button"
+                        className="book-author-filter-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLibAuthorFilter(book.authors ?? null);
+                        }}
+                        title={`Filter op ${book.authors}`}
+                      >
+                        {book.authors}
+                      </button>
                     </div>
                   </div>
-                  {showDailyGoalProgress && (
-                    <div className="book-card-challenge-progress">
-                      <span className="book-card-challenge-label">Voortgang (dagelijkse leesdoel)</span>
-                      <div className="book-card-challenge-bar-wrap">
-                        <div
-                          className="book-card-challenge-bar-fill"
-                          style={{ width: `${Math.min(100, (progress!.current / progress!.total) * 100)}%` }}
-                        />
-                      </div>
-                      <span className="book-card-challenge-pages">
-                        Je bent op bladzijde <strong>{progress!.current}</strong> van {progress!.total}
-                      </span>
+                  {libGenreFilter.length > 0 && parseGenres(book.genre).length > 0 && (
+                    <div className="book-card-genres" onClick={(e) => e.stopPropagation()}>
+                      {parseGenres(book.genre).map((g) => (
+                        <button
+                          key={g}
+                          type="button"
+                          className={`book-card-genre-chip${libGenreFilter.some((sel) => sel.toLowerCase() === g.toLowerCase()) ? " book-card-genre-chip--active" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLibGenreFilter((prev) =>
+                              prev.some((sel) => sel.toLowerCase() === g.toLowerCase())
+                                ? prev.filter((x) => x.toLowerCase() !== g.toLowerCase())
+                                : [...prev, g]
+                            );
+                          }}
+                          title={`Filter op ${g}`}
+                        >
+                          {g}
+                        </button>
+                      ))}
                     </div>
                   )}
-                  <div className="book-meta">
-                    <label>
-                      Status:
-                      <select
-                        value={book.status}
-                        onChange={(e) =>
-                          updateStatus(book.id, e.target.value as ReadStatus)
-                        }
-                      >
-                        {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div>
-                      <span>Beoordeling:</span>
-                      <RatingStars
-                        value={book.rating}
-                        onChange={(val) => updateRating(book.id, val)}
-                      />
-                    </div>
-                  </div>
-                  <div className="book-card-actions">
-                    <button
-                      type="button"
-                      className="link-button"
-                      onClick={() => goToDetails(book.id)}
+                  <div className="book-card-footer" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      className="lib-status-select"
+                      value={book.status}
+                      onChange={(e) => updateStatus(book.id, e.target.value as ReadStatus)}
+                      aria-label="Status"
                     >
-                      Details
-                    </button>
-                    <button
-                      type="button"
-                      className="link-button destructive"
-                      onClick={() => removeBook(book.id)}
-                    >
-                      Verwijderen
-                    </button>
+                      {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
                   </div>
                 </article>
               );
@@ -2745,6 +2976,220 @@ export function BooksPage({ mode = "full" }: { mode?: BooksPageMode } = {}) {
       )}
 
       {toast && <div className="toast">{toast}</div>}
+
+      {/* ─── Auteur sheet ─────────────────────────────────────────────────── */}
+      {showAuthorSheet && (
+        <div className="lib-sheet-overlay" onClick={() => setShowAuthorSheet(false)}>
+          <div className="lib-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="lib-sheet-header">
+              <h3 className="lib-sheet-title">Filter op auteur</h3>
+              <button className="lib-sheet-close" onClick={() => setShowAuthorSheet(false)} aria-label="Sluiten">×</button>
+            </div>
+            <div className="lib-sheet-search-wrap">
+              <input
+                type="search"
+                className="lib-sheet-search"
+                placeholder="Zoek auteur…"
+                value={libAuthorSearch}
+                onChange={(e) => setLibAuthorSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="lib-sheet-list">
+              {libUniqueAuthors
+                .filter((a) => !libAuthorSearch || a.name.toLowerCase().includes(libAuthorSearch.toLowerCase()))
+                .map((a) => (
+                  <button
+                    key={a.name}
+                    type="button"
+                    className={`lib-sheet-item${libAuthorFilter === a.name ? " lib-sheet-item--active" : ""}`}
+                    onClick={() => {
+                      setLibAuthorFilter(libAuthorFilter === a.name ? null : a.name);
+                      setShowAuthorSheet(false);
+                    }}
+                  >
+                    <span className="lib-sheet-item-name">{a.name}</span>
+                    <span className="lib-sheet-item-count">{a.count}</span>
+                  </button>
+                ))}
+              {libUniqueAuthors.filter((a) => !libAuthorSearch || a.name.toLowerCase().includes(libAuthorSearch.toLowerCase())).length === 0 && (
+                <p className="lib-sheet-empty">Geen auteurs gevonden.</p>
+              )}
+            </div>
+            {libAuthorFilter && (
+              <div className="lib-sheet-footer">
+                <button type="button" className="lib-sheet-clear-btn" onClick={() => { setLibAuthorFilter(null); setShowAuthorSheet(false); }}>
+                  Filter wissen
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Genre sheet ──────────────────────────────────────────────────── */}
+      {showGenreSheet && (
+        <div className="lib-sheet-overlay" onClick={() => setShowGenreSheet(false)}>
+          <div className="lib-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="lib-sheet-header">
+              <h3 className="lib-sheet-title">Filter op genre</h3>
+              <button className="lib-sheet-close" onClick={() => setShowGenreSheet(false)} aria-label="Sluiten">×</button>
+            </div>
+            <div className="lib-sheet-search-wrap">
+              <input
+                type="search"
+                className="lib-sheet-search"
+                placeholder="Zoek genre…"
+                value={libGenreSearch}
+                onChange={(e) => setLibGenreSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="lib-sheet-list">
+              {libUniqueGenres
+                .filter((g) => !libGenreSearch || g.name.toLowerCase().includes(libGenreSearch.toLowerCase()))
+                .map((g) => {
+                  const isActive = libGenreFilter.some((sel) => sel.toLowerCase() === g.name.toLowerCase());
+                  return (
+                    <button
+                      key={g.name}
+                      type="button"
+                      className={`lib-sheet-item${isActive ? " lib-sheet-item--active" : ""}`}
+                      onClick={() => {
+                        setLibGenreFilter((prev) =>
+                          isActive ? prev.filter((x) => x.toLowerCase() !== g.name.toLowerCase()) : [...prev, g.name]
+                        );
+                      }}
+                    >
+                      <span className="lib-sheet-item-check">{isActive ? "✓" : ""}</span>
+                      <span className="lib-sheet-item-name">{g.name}</span>
+                      <span className="lib-sheet-item-count">{g.count}</span>
+                    </button>
+                  );
+                })}
+              {libUniqueGenres.filter((g) => !libGenreSearch || g.name.toLowerCase().includes(libGenreSearch.toLowerCase())).length === 0 && (
+                <p className="lib-sheet-empty">Geen genres gevonden.</p>
+              )}
+            </div>
+            <div className="lib-sheet-footer">
+              <button type="button" className="lib-sheet-clear-btn" onClick={() => setLibGenreFilter([])} disabled={libGenreFilter.length === 0}>
+                Wissen
+              </button>
+              <button type="button" className="primary-button" onClick={() => setShowGenreSheet(false)}>
+                Klaar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Verzamelingen sheet ──────────────────────────────────────────── */}
+      {showCollectionSheet && (
+        <div className="lib-sheet-overlay" onClick={() => setShowCollectionSheet(false)}>
+          <div className="lib-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="lib-sheet-header">
+              <h3 className="lib-sheet-title">Verzamelingen</h3>
+              <button className="lib-sheet-close" onClick={() => setShowCollectionSheet(false)} aria-label="Sluiten">×</button>
+            </div>
+            <div className="lib-sheet-list lib-sheet-list--collections">
+              {libCollections.length === 0 && (
+                <p className="lib-sheet-empty">Je hebt nog geen verzamelingen.</p>
+              )}
+              {libCollections.map((col) => (
+                <div key={col.id} className={`lib-collection-item${libCollectionFilter === col.id ? " lib-collection-item--active" : ""}`}>
+                  {editingCollectionId === col.id ? (
+                    <div className="lib-collection-edit">
+                      <input
+                        type="text"
+                        className="lib-collection-input"
+                        value={editCollectionName}
+                        onChange={(e) => setEditCollectionName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEditCollection(col.id);
+                          if (e.key === "Escape") cancelEditCollection();
+                        }}
+                        autoFocus
+                      />
+                      <button type="button" className="lib-collection-save-btn" onClick={() => saveEditCollection(col.id)}>Opslaan</button>
+                      <button type="button" className="lib-collection-cancel-btn" onClick={cancelEditCollection}>Annuleren</button>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="lib-collection-name-btn"
+                        onClick={() => {
+                          setLibCollectionFilter(libCollectionFilter === col.id ? null : col.id);
+                          setShowCollectionSheet(false);
+                        }}
+                      >
+                        <span className="lib-sheet-item-name">{col.name}</span>
+                        <span className="lib-sheet-item-count">{col.count}</span>
+                      </button>
+                      <div className="lib-collection-actions">
+                        <button type="button" className="lib-collection-edit-btn" onClick={() => startEditCollection(col)} title="Hernoemen">✎</button>
+                        <button type="button" className="lib-collection-delete-btn" onClick={() => removeCollection(col.id)} title="Verwijderen">✕</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+            <form className="lib-collection-new-form" onSubmit={handleAddCollection}>
+              <input
+                type="text"
+                className="lib-collection-input"
+                placeholder="Nieuwe verzameling…"
+                value={newCollectionName}
+                onChange={(e) => setNewCollectionName(e.target.value)}
+              />
+              <button type="submit" className="primary-button lib-collection-add-btn" disabled={!newCollectionName.trim()}>
+                Toevoegen
+              </button>
+            </form>
+            {libCollectionFilter && (
+              <div className="lib-sheet-footer">
+                <button type="button" className="lib-sheet-clear-btn" onClick={() => { setLibCollectionFilter(null); setShowCollectionSheet(false); }}>
+                  Filter wissen
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Sorteer sheet ───────────────────────────────────────────────── */}
+      {showSortSheet && (
+        <div className="lib-sheet-overlay" onClick={() => setShowSortSheet(false)}>
+          <div className="lib-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="lib-sheet-header">
+              <h3 className="lib-sheet-title">Sorteren op</h3>
+              <button className="lib-sheet-close" onClick={() => setShowSortSheet(false)} aria-label="Sluiten">×</button>
+            </div>
+            <div className="lib-sheet-list">
+              {(["auteur", "titel", "beoordeling", "serie"] as const).map((mode) => {
+                const labels: Record<string, string> = {
+                  auteur: "Auteur A–Z",
+                  titel: "Titel A–Z",
+                  beoordeling: "Beoordeling (hoog → laag)",
+                  serie: "Serie A–Z",
+                };
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`lib-sheet-item${libSortMode === mode ? " lib-sheet-item--active" : ""}`}
+                    onClick={() => { setLibSortMode(mode); setShowSortSheet(false); }}
+                  >
+                    <span className="lib-sheet-item-name">{labels[mode]}</span>
+                    {libSortMode === mode && <span className="lib-sort-check">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddToShelfModal && addToShelfResult && (
         <div

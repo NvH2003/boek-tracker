@@ -9,6 +9,38 @@ import { fetchBookGenresFromEdge } from "../fetchBookGenresFromEdge";
 import { translateGenreToDutch } from "../genreTranslations";
 import { parseGoodreadsClipboardTextToPillLabels } from "../goodreadsClipboardGenres";
 
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    // Numerieke hex-entiteiten: &#xa0; &#x2019; etc.
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => {
+      const code = parseInt(hex, 16);
+      return code === 160 ? " " : String.fromCodePoint(code);
+    })
+    // Numerieke decimale entiteiten: &#160; &#8217; etc.
+    .replace(/&#(\d+);/g, (_, dec) => {
+      const code = parseInt(dec, 10);
+      return code === 160 ? " " : String.fromCodePoint(code);
+    })
+    // Benoemde entiteiten
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&mdash;/g, "—")
+    .replace(/&ndash;/g, "–")
+    .replace(/&lsquo;/g, "\u2018")
+    .replace(/&rsquo;/g, "\u2019")
+    .replace(/&ldquo;/g, "\u201C")
+    .replace(/&rdquo;/g, "\u201D")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 const GOODREADS_GENRE_CLIPBOARD_ALLOWLIST: readonly string[] = [
   "Art",
   "Autobiography",
@@ -135,6 +167,10 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
   const [rating, setRating] = useState<number | undefined>(book?.rating);
   const [finishedAt, setFinishedAt] = useState<string>(book?.finishedAt ?? "");
   const [notes, setNotes] = useState<string>(book?.notes ?? "");
+  const [showNotes, setShowNotes] = useState<boolean>(!!book?.notes);
+  const [showEdit, setShowEdit] = useState<boolean>(false);
+  const [showSummary, setShowSummary] = useState<boolean>(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
   const [seriesName, setSeriesName] = useState<string>(book?.seriesName ?? "");
   const [seriesNumber, setSeriesNumber] = useState<string>(
     book?.seriesNumber?.toString() ?? ""
@@ -320,6 +356,25 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
       .filter((s): s is NonNullable<typeof s> => s != null)
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [book?.shelfIds, shelves]);
+
+  const standardShelvesToAdd = useMemo(
+    () =>
+      shelves
+        .filter((s: Shelf) => s.system && !(book?.shelfIds ?? []).includes(s.id))
+        .sort((a, b) => a.name.localeCompare(b.name, "nl-NL")),
+    [shelves, book?.shelfIds]
+  );
+  const customShelvesToAdd = useMemo(
+    () =>
+      shelves
+        .filter((s: Shelf) => !s.system && !(book?.shelfIds ?? []).includes(s.id))
+        .sort((a, b) => a.name.localeCompare(b.name, "nl-NL")),
+    [shelves, book?.shelfIds]
+  );
+  const shelvesToAdd = useMemo(
+    () => [...standardShelvesToAdd, ...customShelvesToAdd],
+    [standardShelvesToAdd, customShelvesToAdd]
+  );
 
   function persist(updatedBooks: Book[]) {
     saveBooks(updatedBooks);
@@ -629,25 +684,6 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     updateBook({ shelfIds: shelfIds.length ? shelfIds : undefined });
   }
 
-  const standardShelvesToAdd = useMemo(
-    () =>
-      shelves
-        .filter((s: Shelf) => s.system && !(book?.shelfIds ?? []).includes(s.id))
-        .sort((a, b) => a.name.localeCompare(b.name, "nl-NL")),
-    [shelves, book?.shelfIds]
-  );
-  const customShelvesToAdd = useMemo(
-    () =>
-      shelves
-        .filter((s: Shelf) => !s.system && !(book?.shelfIds ?? []).includes(s.id))
-        .sort((a, b) => a.name.localeCompare(b.name, "nl-NL")),
-    [shelves, book?.shelfIds]
-  );
-  const shelvesToAdd = useMemo(
-    () => [...standardShelvesToAdd, ...customShelvesToAdd],
-    [standardShelvesToAdd, customShelvesToAdd]
-  );
-
   function createShelfAndAddToBook(rawName: string) {
     const name = rawName.trim();
     if (!name) return;
@@ -706,562 +742,430 @@ export function BookDetailPage({ modalBookId, onClose }: BookDetailPageProps = {
     }
   }
 
+  const STATUS_COLORS: Record<ReadStatus, string> = {
+    "wil-ik-lezen": "bd-status--tbr",
+    "aan-het-lezen": "bd-status--reading",
+    "gelezen": "bd-status--read",
+    "geen-status": "bd-status--none",
+  };
+
   return (
-    <div className={`page ${isModal ? "book-detail-modal-content" : ""}`}>
-      {isModal && (
-        <div className="book-detail-modal-header">
-          <button
-            type="button"
-            className="book-detail-modal-close"
-            onClick={onClose}
-            aria-label="Sluiten"
-          >
-            ✕
-          </button>
-          <h1 className="book-detail-modal-title">Boek aanpassen</h1>
-        </div>
-      )}
-      {!isModal && <h1>Boek aanpassen</h1>}
-      <form onSubmit={handleSubmit} className="card form-card book-detail-form">
-        <div className="form-field">
-          <span>Titel</span>
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-        <div className="form-field">
-          <span>Auteur(s)</span>
-          <input
-            type="text"
-            value={authors}
-            onChange={(e) => setAuthors(e.target.value)}
-          />
-        </div>
-        <div className="form-field">
-          <span>Boekkaft URL (optioneel)</span>
-          <input
-            type="url"
-            value={coverUrl}
-            onChange={(e) => setCoverUrl(e.target.value)}
-            placeholder="https://example.com/cover.jpg"
-          />
-        </div>
-        {coverUrl && (
-          <div className="cover-preview">
-            <img
-              src={coverUrl}
-              alt="Preview"
-              className="cover-preview-image"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
+    <div className={`page bd-page ${isModal ? "book-detail-modal-content" : ""}`}>
+
+      {/* ─── Navigatie ──────────────────────────────────────────────── */}
+      <div className="bd-nav">
+        <button type="button" className="bd-back-btn"
+          onClick={() => {
+            if (isModal) { onClose?.(); return; }
+            if (from === "bibliotheek") navigate(withBase(basePath, "/bibliotheek"));
+            else if (from === "boekenkast" && fromShelfId) navigate(withBase(basePath, `/plank/${fromShelfId}`));
+            else navigate(withBase(basePath, "/bibliotheek"));
+          }}>
+          ← {isModal ? "Sluiten" : "Terug"}
+        </button>
+      </div>
+
+      {/* ─── Kaart 1: cover + info + status + rating ────────────────── */}
+      <div className="card bd-main-card">
+        <div className="bd-hero">
+          <div className="bd-hero-cover-wrap">
+            {coverUrl ? (
+              <img src={coverUrl} alt={title} className="bd-hero-cover"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+            ) : (
+              <div className="bd-hero-cover-placeholder">📖</div>
+            )}
           </div>
-        )}
-        <div className="form-field">
-          <span>Status</span>
-          <div className="status-dropdown">
-            <button
-              type="button"
-              className={`status-select status-dropdown-trigger status-select-${status}`}
-              onClick={() => setShowStatusMenu((v) => !v)}
-            >
-              {STATUS_LABELS[status]}
-              <span className="status-dropdown-caret">▾</span>
-            </button>
-            {showStatusMenu && (
-              <div className="status-dropdown-menu">
-                {(Object.entries(STATUS_LABELS) as [ReadStatus, string][])
-                  .map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={`book-detail-status-pill book-detail-status-pill-${value} ${
-                        status === value ? "selected" : ""
-                      }`}
-                      onClick={() => {
-                        handleStatusChange(value);
-                        setShowStatusMenu(false);
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
+          <div className="bd-hero-info">
+            {seriesName && (
+              <div className="book-series-badge bd-hero-series">
+                {seriesName}{seriesNumber && ` #${seriesNumber}`}
+              </div>
+            )}
+            <h1 className="bd-hero-title">{title || "Geen titel"}</h1>
+            <div className="bd-hero-authors">
+              {authors
+                ? authors.split(",").map((a, i, arr) => {
+                    const name = a.trim();
+                    return (
+                      <span key={name}>
+                        <button
+                          type="button"
+                          className="bd-author-filter-btn"
+                          onClick={() => {
+                            try { sessionStorage.setItem("bt_lib_author", name); } catch { /* ignore */ }
+                            navigate(withBase(basePath, "/bibliotheek"));
+                          }}
+                          title={`Filter op ${name}`}
+                        >
+                          {name}
+                        </button>
+                        {i < arr.length - 1 && <span className="bd-author-sep">, </span>}
+                      </span>
+                    );
+                  })
+                : <span>Onbekende auteur</span>}
+            </div>
+            {selectedGenres.length > 0 && (
+              <div className="bd-hero-genres">
+                {selectedGenres.map((g) => <span key={g} className="bd-genre-chip">{g}</span>)}
               </div>
             )}
           </div>
         </div>
-        <div className="form-field">
-          <span>Aantal pagina's (optioneel)</span>
-          <input
-            type="number"
-            min="1"
-            value={pageCount}
-            onChange={(e) => setPageCount(e.target.value)}
-            placeholder="Bijv. 467"
-          />
+
+        <div className="bd-card-divider" />
+
+        {/* Status */}
+        <div className="bd-status-pills">
+          {(Object.entries(STATUS_LABELS) as [ReadStatus, string][]).map(([value, label]) => (
+            <button key={value} type="button"
+              className={`bd-status-pill ${STATUS_COLORS[value]} ${status === value ? "bd-status-pill--active" : ""}`}
+              onClick={() => handleStatusChange(value)}>
+              {label}
+            </button>
+          ))}
         </div>
-        <div className="form-field book-detail-planks">
-          <span>Boekenkast(en)</span>
-          <div className="book-detail-plank-pills">
-            {status !== "geen-status" && (
-              <span className="plank-pill">
-                {STATUS_LABELS[status]}
-              </span>
-            )}
+
+        {/* Rating */}
+        <div className="bd-quick-row">
+          <span className="bd-quick-label">Beoordeling</span>
+          <RatingStars value={rating} onChange={(val) => { setRating(val); updateBook({ rating: val }); }} />
+        </div>
+
+        {/* Datum alleen bij gelezen */}
+        {status === "gelezen" && (
+          <div className="bd-quick-row">
+            <span className="bd-quick-label">Uitgelezen op</span>
+            <input type="date" value={finishedAt}
+              onChange={(e) => { setFinishedAt(e.target.value); updateBook({ finishedAt: e.target.value || undefined }); }}
+              className="bd-form-input bd-date-input" />
+          </div>
+        )}
+      </div>
+
+      {/* ─── Rij: verzamelingen + samenvatting naast elkaar ─────────── */}
+      <div className="bd-two-col">
+
+        {/* Verzamelingen */}
+        <div className="card bd-subsection">
+          <span className="bd-section-title">Verzamelingen</span>
+          <div className="bd-collections-row">
             {bookPlanks.map((shelf) => (
               <span key={shelf.id} className="plank-pill">
-                <Link to={withBase(basePath, `/plank/${shelf.id}`)} className="plank-pill-link">
-                  {shelf.name}
-                </Link>
-                <button
-                  type="button"
-                  className="plank-pill-remove"
-                  aria-label={`Verwijder van boekenkast ${shelf.name}`}
-                  onClick={() => removeBookFromPlank(shelf.id)}
-                >
-                  ×
-                </button>
+                <Link to={withBase(basePath, `/plank/${shelf.id}`)} className="plank-pill-link">{shelf.name}</Link>
+                <button type="button" className="plank-pill-remove"
+                  aria-label={`Verwijder van verzameling ${shelf.name}`}
+                  onClick={() => removeBookFromPlank(shelf.id)}>×</button>
               </span>
             ))}
-            <select
-              className="book-detail-add-plank-select"
-              value=""
+            {bookPlanks.length === 0 && <span className="bd-section-empty">Geen verzamelingen.</span>}
+          </div>
+          {shelvesToAdd.length > 0 && (
+            <select className="bd-add-collection-select" value=""
               onChange={(e) => {
                 const shelfId = e.target.value;
                 if (!shelfId) return;
-
                 if (shelfId === "__new__") {
-                  const typed = window.prompt("Nieuwe boekenkast naam:", "")?.trim() ?? "";
+                  const typed = window.prompt("Nieuwe verzameling naam:", "")?.trim() ?? "";
                   if (typed) createShelfAndAddToBook(typed);
                   e.target.value = "";
                   return;
                 }
-
                 addBookToPlank(shelfId);
                 e.target.value = "";
               }}
-              aria-label="Toevoegen aan boekenkast"
-            >
-              <option value="">+ Toevoegen aan boekenkast</option>
-              <option value="__new__">+ Nieuwe boekenkast toevoegen...</option>
-              {standardShelvesToAdd.length > 0 && (
-                <optgroup label="Standaard boekenkasten">
-                  {standardShelvesToAdd.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {customShelvesToAdd.length > 0 && (
-                <optgroup label="Eigen boekenkasten">
-                  {customShelvesToAdd.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
+              aria-label="Toevoegen aan verzameling">
+              <option value="">+ Toevoegen aan verzameling</option>
+              <option value="__new__">+ Nieuwe verzameling…</option>
+              {customShelvesToAdd.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-          </div>
-          {bookPlanks.length === 0 && shelvesToAdd.length === 0 && (
-            <p className="book-detail-planks-hint">Nog geen boekenkasten gekoppeld. Voeg er hierboven een toe.</p>
           )}
         </div>
-        <div className="form-field">
-          <span>Serie naam (optioneel)</span>
-          <div className="search-input-wrapper">
-            <div className="search-input-inner">
-              <input
-                type="text"
-                value={seriesName}
-                onChange={(e) => setSeriesName(e.target.value)}
-                placeholder="Bijv. De zeven zussen"
-              />
-              {seriesName && (
-                <button
-                  type="button"
-                  className="search-clear-button"
-                  onClick={() => setSeriesName("")}
-                  aria-label="Serie wissen"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-            {(() => {
-              const trimmed = seriesName.trim();
-              if (!trimmed) return null;
-              const matches = existingSeries
-                .filter((name) =>
-                  name.toLowerCase().includes(trimmed.toLowerCase())
-                )
-                .filter((name) => name !== trimmed)
-                .slice(0, 8);
-              if (matches.length === 0) return null;
-              return (
-                <div className="search-suggestions">
-                  {matches.map((name) => (
-                    <div
-                      key={name}
-                      className="search-suggestion-item"
-                      onClick={() => setSeriesName(name)}
-                    >
-                      <span className="search-suggestion-label">{name}</span>
-                      <button
-                        type="button"
-                        className="search-suggestion-edit"
-                        aria-label={`Serienaam "${name}" bewerken`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const current = name;
-                          const nextName = window
-                            .prompt("Nieuwe naam voor deze serie:", current)
-                            ?.trim();
-                          if (!nextName || nextName === current) return;
-                          if (
-                            !window.confirm(
-                              `Alle boeken met serie "${current}" hernoemen naar "${nextName}"?`
-                            )
-                          ) {
-                            return;
-                          }
-                          const updated = books.map((b) =>
-                            (b.seriesName ?? "").trim() === current
-                              ? { ...b, seriesName: nextName }
-                              : b
-                          );
-                          persist(updated);
-                          if ((book?.seriesName ?? "").trim() === current) {
-                            setSeriesName(nextName);
-                          }
-                        }}
-                      >
-                        ✎
-                      </button>
-                      <button
-                        type="button"
-                        className="search-suggestion-delete"
-                        aria-label={`Serie "${name}" overal verwijderen`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteSeriesEverywhere(name);
-                        }}
-                      >
-                        🗑
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-        <div className="form-field">
-          <span>
-            {seriesName ? "Nummer in serie (optioneel)" : "Volgorde (optioneel)"}
-          </span>
-          <input
-            type="number"
-            value={seriesName ? seriesNumber : order}
-            onChange={(e) => {
-              if (seriesName) {
-                setSeriesNumber(e.target.value);
-              } else {
-                setOrder(e.target.value);
-              }
-            }}
-            placeholder={seriesName ? "Bijv. 0.5" : "Bijv. 1"}
-            min="0.1"
-            step="any"
-          />
-        </div>
-        <div className="form-field">
-          <span>Genre (optioneel)</span>
-          <div className="goodreads-genre-actions" style={{ marginBottom: "0.4rem" }}>
-            {getGoodreadsSearchUrl(title, authors) && (
-              <button
-                type="button"
-                className="link-button"
-                disabled={isFetchingGoodreadsGenres}
-                aria-label="Open Goodreads (zoek)"
-                onClick={() => {
-                  const url = getGoodreadsSearchUrl(title, authors);
-                  if (!url) return;
-                  const opened = openInAdjacentWindow(url);
-                  if (!opened) window.open(url, "book_lookup_shared");
-                }}
-              >
-                Open Goodreads (zoek)
-              </button>
-            )}
-          </div>
-          <label className="form-field goodreads-paste-field">
-            <span>Goodreads genres (plakken)</span>
-            <p className="page-intro-small">
-              We lezen enkel de toegestane Goodreads-genres en zetten alleen die als pills (rest wordt genegeerd).
-            </p>
-            <textarea
-              ref={goodreadsPasteTextareaRef}
-              className="profile-input goodreads-paste-textarea"
-              value={goodreadsPasteInputText}
-              onChange={(e) => setGoodreadsPasteInputText(e.target.value)}
-              placeholder="Kopieer op Goodreads de regel met Genres (bijv. 'Genres: Fantasy, Fiction, Romance') en plak hier (Ctrl+V)."
-              rows={4}
-              spellCheck={false}
-              onPaste={(e) => {
-                e.preventDefault();
-                const text = e.clipboardData.getData("text") ?? "";
-                const pillLabels = parseGoodreadsClipboardTextToPillLabels(text);
-                if (pillLabels.length === 0) {
-                  setGoodreadsPasteNotice(
-                    "Geen toegestane genres gevonden. Kopieer de regel 'Genres: ...' uit Goodreads."
-                  );
-                  setGoodreadsPasteNoticeIsSuccess(false);
-                  window.setTimeout(() => setGoodreadsPasteNotice(null), 6500);
-                  return;
-                }
 
-                const finalLabels = reorderManualGenresForYAAndFiction(pillLabels);
-                const joined = finalLabels.join(", ");
-                setGenre(joined);
-                setGoodreadsPasteInputText("");
-                setActiveGenreSuggestionIndex(-1);
-                updateBook({ genre: joined || undefined });
-
-                setGoodreadsPasteNotice("Goodreads genres geplakt en opgeslagen.");
-                setGoodreadsPasteNoticeIsSuccess(true);
-                window.setTimeout(() => setGoodreadsPasteNotice(null), 3200);
-              }}
-              onKeyDown={(e) => {
-                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
-                  // Laat onPaste de parsing doen.
-                  return;
-                }
-              }}
-            />
-          </label>
-          {goodreadsPasteNotice ? (
-            <p
-              className={goodreadsPasteNoticeIsSuccess ? "form-success" : "form-error"}
-              role="alert"
-              style={{ marginTop: "0.2rem" }}
-            >
-              {goodreadsPasteNotice}
-            </p>
-          ) : null}
-          <div className="genre-pill-container">
-            {genrePillsForSelect.length === 0 ? (
-              <span className="page-intro-small">
-                {isFetchingGoodreadsGenres
-                  ? "Even geduld…"
-                  : "Geen genres. Open Goodreads (zoek), kopieer 'Genres: ...' en plak in het tekstveld."}
-              </span>
-            ) : (
-              genrePillsForSelect.map((g, idx) => (
-                <button
-                  key={`detail-genre-${idx}-${g}`}
-                  type="button"
-                  className={`genre-pill ${selectedGenreSet.has(g) ? "selected" : ""}`}
-                  onClick={() => {
-                    const isSelected = selectedGenreSet.has(g);
-                    const current = selectedGenres;
-                    const ordered = isSelected
-                      ? current.filter((x) => x !== g)
-                      : [...current, g].filter(Boolean);
-                    const finalGenre = reorderManualGenresForYAAndFiction(ordered).join(", ");
-                    setGenre(finalGenre);
-                    updateBook({ genre: finalGenre || undefined });
-                  }}
-                >
-                  {g}
-                  {selectedGenreSet.has(g) && <span className="genre-pill-x">×</span>}
-                  <span
-                    className="genre-pill-trash"
-                    role="button"
-                    tabIndex={0}
-                    title={`Verwijder genre "${g}" uit alle boeken`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      removeGenreEverywhere(g);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key !== "Enter" && e.key !== " ") return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      removeGenreEverywhere(g);
-                    }}
-                  >
-                    🗑
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-          <div className="genre-pill-add-row">
-            <div className="search-input-inner">
-              <input
-                type="text"
-                value={genreQuickAdd}
-                onChange={(e) => {
-                  setGenreQuickAdd(e.target.value);
-                  setActiveGenreSuggestionIndex(-1);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowDown") {
-                    if (genreDropdownItems.length === 0) return;
-                    e.preventDefault();
-                    setActiveGenreSuggestionIndex((prev) =>
-                      prev < 0 ? 0 : Math.min(prev + 1, genreDropdownItems.length - 1)
-                    );
-                    return;
-                  }
-
-                  if (e.key === "ArrowUp") {
-                    if (genreDropdownItems.length === 0) return;
-                    e.preventDefault();
-                    setActiveGenreSuggestionIndex((prev) =>
-                      prev < 0 ? genreDropdownItems.length - 1 : Math.max(prev - 1, 0)
-                    );
-                    return;
-                  }
-
-                  if (e.key === "Escape") {
-                    if (activeGenreSuggestionIndex >= 0) {
-                      e.preventDefault();
-                      setActiveGenreSuggestionIndex(-1);
-                    }
-                    return;
-                  }
-
-                  if (e.key !== "Enter") return;
-                  const v = genreQuickAdd.trim();
-                  if (!v) return;
-                  e.preventDefault();
-
-                  if (genreDropdownItems.length > 0) {
-                    const idx =
-                      activeGenreSuggestionIndex >= 0
-                        ? activeGenreSuggestionIndex
-                        : 0;
-                    const valueToAdd = genreDropdownItems[idx]?.value ?? v;
-                    addGenreFromResolved(valueToAdd);
-                    setActiveGenreSuggestionIndex(-1);
-                    return;
-                  }
-
-                  addGenreFromResolved(genreExactExisting ?? v);
-                }}
-                placeholder="Nieuwe genre toevoegen (optioneel)"
-                className="search-input search-input-with-clear"
-              />
-              {genreQuickAdd.trim() && (
-                <button
-                  type="button"
-                  className="search-clear-button"
-                  onClick={() => setGenreQuickAdd("")}
-                  aria-label="Genre input wissen"
-                >
-                  ×
-                </button>
-              )}
-              {genreQuickAddTrim && genreDropdownItems.length > 0 && (
-                <div className="search-suggestions" role="listbox" aria-label="Genre suggesties">
-                  {genreDropdownItems.map((item, idx) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      className={`search-suggestion-item${idx === activeGenreSuggestionIndex ? " active" : ""}`}
-                      onClick={() => {
-                        addGenreFromResolved(item.value);
-                        setActiveGenreSuggestionIndex(-1);
-                      }}
-                      role="option"
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <button
-              type="button"
-              className="link-button"
-              disabled={!genreQuickAdd.trim()}
-              onClick={() => {
-                const v = genreQuickAdd.trim();
-                if (!v) return;
-                const resolved = genreExactExisting ?? genreQuickAddSuggestions[0] ?? v;
-                addGenreFromResolved(resolved);
-              }}
-            >
-              + Voeg toe
+        {/* Samenvatting — rechterkolom, alleen als ingeklapt */}
+        {!showSummary && (
+          <div className="card bd-subsection bd-collapsible">
+            <button type="button" className="bd-collapse-toggle" onClick={() => description && setShowSummary(true)}>
+              <span className="bd-section-title">Samenvatting</span>
+              {description && <span className="bd-collapse-icon">▼</span>}
             </button>
+          {description ? (
+            <p className="bd-summary-preview">{stripHtml(description)}</p>
+          ) : (
+            <span className="bd-section-empty">Geen samenvatting.</span>
+          )}
           </div>
+        )}
+
+      </div>
+
+      {/* Samenvatting uitgevouwen — volledige breedte, verplaatst naar hier */}
+      {showSummary && description && (
+        <div className="card bd-section bd-collapsible">
+          <button type="button" className="bd-collapse-toggle" onClick={() => setShowSummary(false)}>
+            <span className="bd-section-title">Samenvatting</span>
+            <span className="bd-collapse-icon">▲</span>
+          </button>
+          <p className="bd-summary-full">{stripHtml(description)}</p>
         </div>
-        <div className="form-field">
-          <span>Uitgelezen op</span>
-          <input
-            type="date"
-            value={finishedAt}
-            onChange={(e) => setFinishedAt(e.target.value)}
-          />
-        </div>
-        <div className="form-field">
-          <span>Beoordeling</span>
-          <RatingStars value={rating} onChange={setRating} />
-        </div>
-        <div className="form-field">
-          <span>Samenvatting (optioneel)</span>
-          {description && (
-            <div className="book-detail-summary-preview">
-              <p className="book-detail-summary-text">{description}</p>
-              <button
-                type="button"
-                className="book-detail-summary-toggle"
-                onClick={(e) => {
+      )}
+
+      {/* ─── Bewerken (inklapbaar) ──────────────────────────────────── */}
+      <form onSubmit={handleSubmit} className="card bd-section bd-edit-section bd-collapsible">
+        <button type="button" className="bd-collapse-toggle" onClick={() => setShowEdit((v) => !v)}>
+          <span className="bd-section-title">Boekgegevens bewerken</span>
+          <span className="bd-collapse-icon">{showEdit ? "▲" : "▼"}</span>
+        </button>
+        {showEdit && <div className="bd-form-grid">
+          <div className="bd-form-field">
+            <label className="bd-form-label">Titel</label>
+            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="bd-form-input" />
+          </div>
+          <div className="bd-form-field">
+            <label className="bd-form-label">Auteur(s)</label>
+            <input type="text" value={authors} onChange={(e) => setAuthors(e.target.value)} className="bd-form-input" />
+          </div>
+          <div className="bd-form-field">
+            <label className="bd-form-label">Aantal pagina's</label>
+            <input type="number" min="1" value={pageCount} onChange={(e) => setPageCount(e.target.value)} className="bd-form-input" placeholder="Bijv. 467" />
+          </div>
+          <div className="bd-form-field bd-form-field--full">
+            <label className="bd-form-label">Serie naam</label>
+            <div className="search-input-wrapper">
+              <div className="search-input-inner">
+                <input
+                  type="text"
+                  value={seriesName}
+                  onChange={(e) => setSeriesName(e.target.value)}
+                  placeholder="Bijv. De zeven zussen"
+                  className="bd-form-input"
+                />
+                {seriesName && (
+                  <button type="button" className="search-clear-button" onClick={() => setSeriesName("")} aria-label="Serie wissen">×</button>
+                )}
+              </div>
+              {(() => {
+                const trimmed = seriesName.trim();
+                if (!trimmed) return null;
+                const matches = existingSeries.filter((n) => n.toLowerCase().includes(trimmed.toLowerCase()) && n !== trimmed).slice(0, 8);
+                if (matches.length === 0) return null;
+                return (
+                  <div className="search-suggestions">
+                    {matches.map((n) => (
+                      <div key={n} className="search-suggestion-item" onClick={() => setSeriesName(n)}>
+                        <span className="search-suggestion-label">{n}</span>
+                        <button type="button" className="search-suggestion-edit" aria-label={`Serie "${n}" bewerken`} onClick={(e) => { e.stopPropagation(); const next = window.prompt("Nieuwe naam:", n)?.trim(); if (!next || next === n) return; if (!window.confirm(`Alle boeken met serie "${n}" hernoemen naar "${next}"?`)) return; persist(books.map((b) => (b.seriesName ?? "").trim() === n ? { ...b, seriesName: next } : b)); if ((book?.seriesName ?? "").trim() === n) setSeriesName(next); }}>✎</button>
+                        <button type="button" className="search-suggestion-delete" aria-label={`Serie "${n}" overal verwijderen`} onClick={(e) => { e.stopPropagation(); deleteSeriesEverywhere(n); }}>🗑</button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+          <div className="bd-form-field">
+            <label className="bd-form-label">{seriesName ? "Nummer in serie" : "Volgorde"}</label>
+            <input
+              type="number"
+              value={seriesName ? seriesNumber : order}
+              onChange={(e) => { if (seriesName) setSeriesNumber(e.target.value); else setOrder(e.target.value); }}
+              placeholder={seriesName ? "Bijv. 0.5" : "Bijv. 1"}
+              min="0.1"
+              step="any"
+              className="bd-form-input"
+            />
+          </div>
+          <div className="bd-form-field bd-form-field--full">
+            <label className="bd-form-label">Boekkaft URL</label>
+            <input type="url" value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} placeholder="https://example.com/cover.jpg" className="bd-form-input" />
+          </div>
+          <div className="bd-form-field bd-form-field--full">
+            <label className="bd-form-label">Samenvatting</label>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="bd-textarea" placeholder="Korte samenvatting van het boek…" />
+          </div>
+        </div>}
+
+        {showEdit && (
+          <div className="bd-form-field bd-form-field--full bd-genre-section">
+            <label className="bd-form-label">Genre</label>
+            <div className="goodreads-genre-actions" style={{ marginBottom: "0.4rem" }}>
+              {getGoodreadsSearchUrl(title, authors) && (
+                <button type="button" className="link-button" disabled={isFetchingGoodreadsGenres}
+                  onClick={() => { const url = getGoodreadsSearchUrl(title, authors); if (!url) return; const opened = openInAdjacentWindow(url); if (!opened) window.open(url, "book_lookup_shared"); }}>
+                  Open Goodreads (zoek)
+                </button>
+              )}
+            </div>
+            <label className="form-field goodreads-paste-field">
+              <span>Goodreads genres (plakken)</span>
+              <textarea
+                ref={goodreadsPasteTextareaRef}
+                className="profile-input goodreads-paste-textarea"
+                value={goodreadsPasteInputText}
+                onChange={(e) => setGoodreadsPasteInputText(e.target.value)}
+                placeholder="Kopieer op Goodreads de regel met Genres en plak hier (Ctrl+V)."
+                rows={3}
+                spellCheck={false}
+                onPaste={(e) => {
                   e.preventDefault();
-                  e.currentTarget.parentElement?.classList.toggle("expanded");
+                  const text = e.clipboardData.getData("text") ?? "";
+                  const pillLabels = parseGoodreadsClipboardTextToPillLabels(text);
+                  if (pillLabels.length === 0) {
+                    setGoodreadsPasteNotice("Geen toegestane genres gevonden. Kopieer de regel 'Genres: ...' uit Goodreads.");
+                    setGoodreadsPasteNoticeIsSuccess(false);
+                    window.setTimeout(() => setGoodreadsPasteNotice(null), 6500);
+                    return;
+                  }
+                  const finalLabels = reorderManualGenresForYAAndFiction(pillLabels);
+                  const joined = finalLabels.join(", ");
+                  setGenre(joined);
+                  setGoodreadsPasteInputText("");
+                  setActiveGenreSuggestionIndex(-1);
+                  updateBook({ genre: joined || undefined });
+                  setGoodreadsPasteNotice("Goodreads genres geplakt en opgeslagen.");
+                  setGoodreadsPasteNoticeIsSuccess(true);
+                  window.setTimeout(() => setGoodreadsPasteNotice(null), 3200);
                 }}
-              >
-                Alles lezen
+              />
+            </label>
+            {goodreadsPasteNotice && (
+              <p className={goodreadsPasteNoticeIsSuccess ? "form-success" : "form-error"} role="alert" style={{ marginTop: "0.2rem" }}>
+                {goodreadsPasteNotice}
+              </p>
+            )}
+            <div className="genre-pill-container" style={{ marginTop: "0.5rem" }}>
+              {genrePillsForSelect.length === 0 ? (
+                <span className="page-intro-small">{isFetchingGoodreadsGenres ? "Even geduld…" : "Geen genres. Plak uit Goodreads of voeg handmatig toe."}</span>
+              ) : (
+                genrePillsForSelect.map((g, idx) => (
+                  <button key={`detail-genre-${idx}-${g}`} type="button"
+                    className={`genre-pill ${selectedGenreSet.has(g) ? "selected" : ""}`}
+                    onClick={() => {
+                      const isSelected = selectedGenreSet.has(g);
+                      const ordered = isSelected ? selectedGenres.filter((x) => x !== g) : [...selectedGenres, g].filter(Boolean);
+                      const finalGenre = reorderManualGenresForYAAndFiction(ordered).join(", ");
+                      setGenre(finalGenre);
+                      updateBook({ genre: finalGenre || undefined });
+                    }}>
+                    {g}
+                    {selectedGenreSet.has(g) && <span className="genre-pill-x">×</span>}
+                    <span className="genre-pill-trash" role="button" tabIndex={0}
+                      title={`Verwijder genre "${g}" uit alle boeken`}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeGenreEverywhere(g); }}
+                      onKeyDown={(e) => { if (e.key !== "Enter" && e.key !== " ") return; e.preventDefault(); e.stopPropagation(); removeGenreEverywhere(g); }}>
+                      🗑
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="genre-pill-add-row">
+              <div className="search-input-inner">
+                <input
+                  type="text"
+                  value={genreQuickAdd}
+                  onChange={(e) => { setGenreQuickAdd(e.target.value); setActiveGenreSuggestionIndex(-1); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowDown") { if (!genreDropdownItems.length) return; e.preventDefault(); setActiveGenreSuggestionIndex((p) => p < 0 ? 0 : Math.min(p + 1, genreDropdownItems.length - 1)); return; }
+                    if (e.key === "ArrowUp") { if (!genreDropdownItems.length) return; e.preventDefault(); setActiveGenreSuggestionIndex((p) => p < 0 ? genreDropdownItems.length - 1 : Math.max(p - 1, 0)); return; }
+                    if (e.key === "Escape") { if (activeGenreSuggestionIndex >= 0) { e.preventDefault(); setActiveGenreSuggestionIndex(-1); } return; }
+                    if (e.key !== "Enter") return;
+                    const v = genreQuickAdd.trim();
+                    if (!v) return;
+                    e.preventDefault();
+                    if (genreDropdownItems.length > 0) {
+                      const idx = activeGenreSuggestionIndex >= 0 ? activeGenreSuggestionIndex : 0;
+                      addGenreFromResolved(genreDropdownItems[idx]?.value ?? v);
+                      setActiveGenreSuggestionIndex(-1);
+                      return;
+                    }
+                    addGenreFromResolved(genreExactExisting ?? v);
+                  }}
+                  placeholder="Genre toevoegen…"
+                  className="search-input search-input-with-clear"
+                />
+                {genreQuickAdd.trim() && (
+                  <button type="button" className="search-clear-button" onClick={() => setGenreQuickAdd("")} aria-label="Wissen">×</button>
+                )}
+                {genreQuickAddTrim && genreDropdownItems.length > 0 && (
+                  <div className="search-suggestions" role="listbox">
+                    {genreDropdownItems.map((item, idx) => (
+                      <button key={item.key} type="button"
+                        className={`search-suggestion-item${idx === activeGenreSuggestionIndex ? " active" : ""}`}
+                        onClick={() => { addGenreFromResolved(item.value); setActiveGenreSuggestionIndex(-1); }}
+                        role="option">
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button type="button" className="link-button" disabled={!genreQuickAdd.trim()}
+                onClick={() => { const v = genreQuickAdd.trim(); if (!v) return; addGenreFromResolved(genreExactExisting ?? genreQuickAddSuggestions[0] ?? v); }}>
+                + Voeg toe
               </button>
             </div>
-          )}
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={4}
-            className="notes-textarea"
-            placeholder="Korte samenvatting van het boek..."
-          />
-        </div>
-        <div className="form-field">
-          <span>Notitie</span>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            className="notes-textarea"
-          />
-        </div>
-        <div className="form-actions">
-          <button type="submit" className="primary-button">
-            Opslaan
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => (isModal ? onClose?.() : navigate(-1))}
-          >
-            Annuleren
-          </button>
-        </div>
+          </div>
+        )}
+
+        {showEdit && (
+          <div className="bd-form-actions">
+            <button type="submit" className="primary-button">Opslaan</button>
+            <button type="button" className="secondary-button" onClick={() => (isModal ? onClose?.() : navigate(-1))}>Annuleren</button>
+          </div>
+        )}
       </form>
+
+      {/* ─── Notities (onder bewerken) ──────────────────────────────── */}
+      <div className="card bd-section bd-collapsible">
+        <button type="button" className="bd-collapse-toggle" onClick={() => setShowNotes((v) => !v)}>
+          <span className="bd-section-title">Notities</span>
+          <span className="bd-collapse-icon">{showNotes ? "▲" : "▼"}</span>
+        </button>
+        {showNotes && (
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+            onBlur={() => updateBook({ notes: notes.trim() || undefined })}
+            rows={3} className="bd-textarea" placeholder="Persoonlijke notities…" />
+        )}
+      </div>
+
+      {/* ─── Verwijderen (compact onderaan) ─────────────────────────── */}
+      <div className="bd-danger-zone card">
+        <button type="button" className="bd-delete-btn" onClick={() => setShowDeleteConfirm(true)}>
+          Boek verwijderen
+        </button>
+      </div>
+
+      {/* ─── Bevestigingsdialoog ─────────────────────────────────────── */}
+      {showDeleteConfirm && (
+        <div className="bd-confirm-overlay" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="bd-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <p className="bd-confirm-title">Boek verwijderen?</p>
+            <p className="bd-confirm-desc">
+              <strong>{title}</strong> wordt permanent uit je bibliotheek verwijderd.
+            </p>
+            <div className="bd-confirm-actions">
+              <button type="button" className="secondary-button" onClick={() => setShowDeleteConfirm(false)}>
+                Annuleren
+              </button>
+              <button
+                type="button"
+                className="bd-confirm-delete-btn"
+                onClick={() => {
+                  const updated = books.filter((b) => b.id !== book.id);
+                  saveBooks(updated);
+                  if (from === "bibliotheek") navigate(withBase(basePath, "/bibliotheek"));
+                  else navigate(withBase(basePath, "/boeken"));
+                }}
+              >
+                Verwijderen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

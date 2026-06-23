@@ -1,13 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ReadStatus, Shelf } from "../types";
-
-const STATUS_LABELS: Record<ReadStatus, string> = {
-  "wil-ik-lezen": "Wil ik lezen",
-  "aan-het-lezen": "Aan het lezen",
-  gelezen: "Gelezen",
-  "geen-status": "Geen status"
-};
+import { Shelf } from "../types";
 import { useBasePath, withBase } from "../routing";
 import { useZoom } from "../ZoomContext";
 import {
@@ -72,9 +65,6 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
     }
   }, [readingPace]);
 
-  const [newName, setNewName] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -141,23 +131,6 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
     migrateLocalStorageToInstant(profileId);
   }, [profileId, dataLoading]);
 
-  const sortedShelves = useMemo(() => {
-    const systemOrder: Record<string, number> = {
-      "wil-ik-lezen": 0,
-      "aan-het-lezen": 1,
-      gelezen: 2
-    };
-    return [...shelves].sort((a, b) => {
-      if (a.system && b.system) {
-        const ao = systemOrder[a.id] ?? 99;
-        const bo = systemOrder[b.id] ?? 99;
-        return ao - bo;
-      }
-      if (a.system && !b.system) return -1;
-      if (!a.system && b.system) return 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [shelves]);
 
   function handleSaveGenreAllowlist() {
     const items = parseGenreAllowlistTextarea(genreAllowlistText);
@@ -196,48 +169,6 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
 
   function getSelectedCount(itemIndex: number): number {
     return selectedSharedBookIndices.get(itemIndex)?.size ?? 0;
-  }
-
-  function persist(next: Shelf[]) {
-    saveShelves(next);
-  }
-
-  function handleAddShelf(e: FormEvent) {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    const shelf: Shelf = {
-      id: `shelf-${Date.now()}`,
-      name: newName.trim()
-    };
-    persist([...shelves, shelf]);
-    setNewName("");
-  }
-
-  function startEditShelf(shelf: Shelf) {
-    setEditingId(shelf.id);
-    setEditName(shelf.name);
-  }
-
-  function saveEditShelf(id: string) {
-    if (!editName.trim()) {
-      cancelEditShelf();
-      return;
-    }
-    const updated = shelves.map((s) =>
-      s.id === id ? { ...s, name: editName.trim() } : s
-    );
-    persist(updated);
-    setEditingId(null);
-    setEditName("");
-  }
-
-  function cancelEditShelf() {
-    setEditingId(null);
-    setEditName("");
-  }
-
-  function removeShelf(id: string) {
-    persist(shelves.filter((s) => s.id !== id));
   }
 
   function saveProfile(e: FormEvent) {
@@ -648,74 +579,14 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
         )}
       </section>
 
-      <section className="profile-card card">
-        <h2 className="profile-card-title">Boekenkasten</h2>
-        <p className="profile-card-desc">Eigen boekenkasten om je boeken in te delen.</p>
-        <form onSubmit={handleAddShelf} className="profile-form-row">
-          <label className="profile-field profile-field-grow">
-            <span className="profile-field-label visually-hidden">Nieuwe boekenkast</span>
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Naam van de boekenkast…"
-              className="profile-input"
-            />
-          </label>
-          <button type="submit" className="primary-button">
-            Toevoegen
-          </button>
-        </form>
-
-        <ul className="profile-shelf-list">
-          {sortedShelves.map((shelf) => (
-            <li key={shelf.id} className={`profile-shelf-item ${editingId === shelf.id ? "editing" : ""}`}>
-              {editingId === shelf.id ? (
-                <div className="profile-shelf-edit">
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveEditShelf(shelf.id);
-                      if (e.key === "Escape") cancelEditShelf();
-                    }}
-                    autoFocus
-                    className="profile-input profile-shelf-edit-input"
-                  />
-                  <div className="profile-shelf-edit-actions">
-                    <button type="button" onClick={() => saveEditShelf(shelf.id)} className="link-button">
-                      Opslaan
-                    </button>
-                    <button type="button" onClick={cancelEditShelf} className="link-button">
-                      Annuleren
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <Link
-                    to={withBase(basePath, `/plank/${shelf.id}`)}
-                    className="profile-shelf-name"
-                  >
-                    {shelf.name}
-                    {shelf.system && <span className="profile-shelf-tag">Standaard</span>}
-                  </Link>
-                  <div className="profile-shelf-actions">
-                    <button type="button" onClick={() => startEditShelf(shelf)} className="link-button">
-                      Bewerken
-                    </button>
-                    {!shelf.system && (
-                      <button type="button" onClick={() => removeShelf(shelf.id)} className="link-button destructive">
-                        Verwijderen
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
+      <section className="profile-card card profile-collections-card">
+        <h2 className="profile-card-title">Verzamelingen</h2>
+        <p className="profile-card-desc">
+          Maak en beheer verzamelingen direct vanuit je bibliotheek. Je bestaande boekenkasten zijn automatisch omgezet naar verzamelingen.
+        </p>
+        <Link to={withBase(basePath, "/bibliotheek")} className="primary-button profile-collections-link">
+          Beheer verzamelingen
+        </Link>
       </section>
 
       {showSharedInboxModal && (
@@ -853,7 +724,7 @@ export function ProfilePage({ onLogout }: ProfilePageProps) {
                                     if (!name) return;
                                     const newShelf: Shelf = { id: `shelf-${Date.now()}`, name };
                                     const nextShelves = [...shelves, newShelf];
-                                    persist(nextShelves);
+                                    saveShelves(nextShelves);
                                     const indices = Array.from(selectedSharedBookIndices.get(itemIndex) ?? []);
                                     const snapshots = indices.map((i) => item.books[i]);
                                     const result = await addBookSnapshotsToMyLibrary(snapshots, { status: "geen-status", shelfId: newShelf.id }, books);
