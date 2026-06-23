@@ -7038,26 +7038,27 @@ button.genre-assist-inline-btn {
   background: rgba(15, 23, 42, 0.65);
   z-index: 50;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
+  padding: 1.25rem;
 }
 
 .lib-sheet {
   background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
   border: 1px solid rgba(71, 85, 105, 0.5);
-  border-radius: 1.25rem 1.25rem 0 0;
+  border-radius: 1.25rem;
   width: 100%;
   max-width: 560px;
-  max-height: 80vh;
+  max-height: min(75vh, 520px);
   display: flex;
   flex-direction: column;
-  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.5);
-  animation: lib-sheet-slide-up 0.2s ease;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  animation: lib-sheet-fade-in 0.18s ease;
 }
 
-@keyframes lib-sheet-slide-up {
-  from { transform: translateY(100%); }
-  to   { transform: translateY(0); }
+@keyframes lib-sheet-fade-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .lib-sheet-header {
@@ -7351,22 +7352,11 @@ button.genre-assist-inline-btn {
   font-size: 0.9rem;
 }
 
-/* Desktop sheet: centered popover style instead of bottom-sheet */
+/* Desktop: iets smaller popover */
 @media (min-width: 768px) {
-  .lib-sheet-overlay {
-    align-items: center;
-  }
-
   .lib-sheet {
-    border-radius: 1.25rem;
     max-height: 70vh;
     max-width: 480px;
-    animation: lib-sheet-fade-in 0.15s ease;
-  }
-
-  @keyframes lib-sheet-fade-in {
-    from { opacity: 0; transform: translateY(12px); }
-    to   { opacity: 1; transform: translateY(0); }
   }
 }
 
